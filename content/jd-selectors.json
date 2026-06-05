@@ -1,0 +1,38 @@
+{
+  "linkedin": {
+    "matches": ["linkedin.com/jobs"],
+    "title": [
+      ".job-details-jobs-unified-top-card__job-title h1",
+      ".jobs-unified-top-card__job-title",
+      "h1.t-24"
+    ],
+    "company": [
+      ".job-details-jobs-unified-top-card__company-name a",
+      ".jobs-unified-top-card__company-name",
+      ".topcard__org-name-link"
+    ],
+    "description": [
+      ".jobs-description__content .jobs-box__html-content",
+      "#job-details",
+      ".jobs-description-content__text"
+    ]
+  },
+  "greenhouse": {
+    "matches": ["boards.greenhouse.io", "app.greenhouse.io"],
+    "title": [
+      "h1.app-title",
+      ".job-post-header h1",
+      "#header h1"
+    ],
+    "company": [
+      ".company-name",
+      "#header .company",
+      "title"
+    ],
+    "description": [
+      "#content",
+      ".job-post-content",
+      ".job_description"
+    ]
+  }
+}

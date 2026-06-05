@@ -1,0 +1,46 @@
+export interface ExtractedJD {
+  title: string;
+  company: string;
+  text: string;
+  url: string;
+  extraction_method: "structured" | "heuristic";
+}
+
+export interface StoredAuth {
+  sr_access_token: string;
+  sr_refresh_token: string;
+  sr_expires_at: number;
+  sr_user: UserInfo;
+}
+
+export interface UserInfo {
+  id: string;
+  email: string;
+  display_name: string;
+}
+
+export interface SaveJDRequest {
+  url: string;
+  title: string;
+  company: string;
+  text: string;
+  source: "extension";
+}
+
+export interface SaveJDResponse {
+  jd_id: string;
+  export_token: string;
+  expires_in: number;
+}
+
+export interface ExtensionLoginResponse {
+  access_token: string;
+  refresh_token: string;
+  expires_in: number;
+  user: UserInfo;
+}
+
+export type PopupMessage =
+  | { type: "EXTRACT_JD" }
+  | { type: "JD_RESULT"; jd: ExtractedJD | null }
+  | { type: "JD_ERROR"; error: string };

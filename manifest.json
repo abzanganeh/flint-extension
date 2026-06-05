@@ -1,0 +1,65 @@
+{
+  "manifest_version": 3,
+  "name": "Flint — AI Interview Copilot",
+  "version": "0.1.0",
+  "description": "Capture job descriptions and send them to Flint desktop with one click.",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "alarms"
+  ],
+  "host_permissions": [
+    "http://localhost:8000/*",
+    "https://www.linkedin.com/jobs/*",
+    "https://linkedin.com/jobs/*",
+    "https://*.greenhouse.io/*"
+  ],
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "scripts": ["background/service-worker.js"],
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup/index.html",
+    "default_title": "Flint",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.linkedin.com/jobs/*",
+        "https://linkedin.com/jobs/*",
+        "https://*.greenhouse.io/*"
+      ],
+      "js": ["content/jd-extractor.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "flint@flint.app",
+      "strict_min_version": "128.0"
+    }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["content/jd-selectors.json"],
+      "matches": [
+        "https://www.linkedin.com/jobs/*",
+        "https://*.greenhouse.io/*"
+      ]
+    }
+  ]
+}
