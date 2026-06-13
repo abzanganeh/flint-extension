@@ -6,6 +6,45 @@ import { buildTailorInFlintResumeUrl, getGoogleClientId } from "../src/urls.js";
 
 const GOOGLE_ENABLED = Boolean(getGoogleClientId());
 
+// MV3 service workers sleep between events. When the popup sends the first
+// message, there is a race window where Chrome has woken the SW but it has
+// not yet registered its onMessage listener. Retry with back-off until the
+// channel is open or we give up.
+async function _sendGoogleLoginToSW(
+  maxAttempts = 6,
+  baseDelayMs = 200,
+): Promise<GoogleLoginResult> {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const result = await new Promise<GoogleLoginResult>((resolve, reject) => {
+        chrome.runtime.sendMessage(
+          { type: "GOOGLE_LOGIN" },
+          (res: GoogleLoginResult | undefined) => {
+            if (chrome.runtime.lastError) {
+              reject(new Error(chrome.runtime.lastError.message));
+            } else if (res) {
+              resolve(res);
+            }
+            // res undefined → popup closed mid-flow; SW still stores the token.
+          },
+        );
+      });
+      return result;
+    } catch (err) {
+      const isConnectionError =
+        err instanceof Error &&
+        (err.message.includes("does not exist") || err.message.includes("establish connection"));
+
+      if (isConnectionError && attempt < maxAttempts - 1) {
+        await new Promise((r) => setTimeout(r, baseDelayMs * (attempt + 1)));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error("Service worker unreachable — please try again.");
+}
+
 type View = "loading" | "login" | "not_on_job" | "job_ready" | "saving" | "saved" | "error";
 
 const FLINT_NOT_INSTALLED_TIMEOUT_MS = 3000;
@@ -89,18 +128,7 @@ export function Popup(): React.ReactElement {
     // abandoned. The SW survives popup close and stores the token; if the
     // popup is still open when the flow finishes, the SW sends back a result.
     try {
-      const result = await new Promise<GoogleLoginResult>((resolve, reject) => {
-        chrome.runtime.sendMessage({ type: "GOOGLE_LOGIN" }, (res: GoogleLoginResult | undefined) => {
-          if (chrome.runtime.lastError) {
-            reject(new Error(chrome.runtime.lastError.message));
-          } else if (res) {
-            resolve(res);
-          }
-          // If res is undefined the popup closed mid-flow; the SW stored the
-          // token, and _init() will pick it up on next popup open.
-        });
-      });
-
+      const result = await _sendGoogleLoginToSW();
       if (result.success) {
         setView("loading");
         await _extractJD();
