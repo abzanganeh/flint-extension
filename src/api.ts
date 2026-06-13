@@ -69,6 +69,16 @@ export async function apiRefresh(
   });
 }
 
+export async function apiGoogleCallback(
+  code: string,
+  redirectUri: string,
+): Promise<ExtensionLoginResponse> {
+  return request<ExtensionLoginResponse>("/api/auth/extension/callback", {
+    method: "POST",
+    body: JSON.stringify({ provider: "google", code, redirect_uri: redirectUri }),
+  });
+}
+
 export async function apiSaveJD(
   payload: SaveJDRequest,
   accessToken: string,

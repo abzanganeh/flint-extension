@@ -47,5 +47,8 @@ export default defineConfig({
     "import.meta.env.VITE_WEB_APP_BASE_URL": JSON.stringify(
       process.env.VITE_WEB_APP_BASE_URL ?? "http://localhost:3000",
     ),
+    "import.meta.env.VITE_GOOGLE_CLIENT_ID": JSON.stringify(
+      process.env.VITE_GOOGLE_CLIENT_ID ?? "",
+    ),
   },
 });
