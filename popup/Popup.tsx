@@ -1,11 +1,17 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import type { ExtractedJD } from "../src/types.js";
 import { getAccessTokenOrNull, login, logout } from "../src/auth.js";
 import { apiSaveJD } from "../src/api.js";
+import { buildTailorInFlintResumeUrl } from "../src/urls.js";
 
 type View = "loading" | "login" | "not_on_job" | "job_ready" | "saving" | "saved" | "error";
 
 const FLINT_NOT_INSTALLED_TIMEOUT_MS = 3000;
+
+// chrome.runtime.getURL resolves correctly inside the extension bundle.
+const ICON_URL = typeof chrome !== "undefined" && chrome.runtime?.getURL
+  ? chrome.runtime.getURL("icons/icon32.png")
+  : "/icons/icon32.png";
 
 export function Popup(): React.ReactElement {
   const [view, setView] = useState<View>("loading");
@@ -15,10 +21,15 @@ export function Popup(): React.ReactElement {
   const [jd, setJd] = useState<ExtractedJD | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [flintFallback, setFlintFallback] = useState(false);
+  const [savedJdId, setSavedJdId] = useState<string | null>(null);
   const [savedExportToken, setSavedExportToken] = useState<string | null>(null);
+  const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     void _init();
+    return () => {
+      if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
+    };
   }, []);
 
   async function _init(): Promise<void> {
@@ -104,6 +115,7 @@ export function Popup(): React.ReactElement {
         },
         token,
       );
+      setSavedJdId(result.jd_id);
       setSavedExportToken(result.export_token);
       setView("saved");
     } catch (err) {
@@ -112,19 +124,25 @@ export function Popup(): React.ReactElement {
     }
   }
 
-  function handleOpenInFlint(): void {
+  function handleTailorInFlintResume(): void {
+    if (!savedJdId) return;
+    void chrome.tabs.create({ url: buildTailorInFlintResumeUrl(savedJdId) });
+  }
+
+  function handlePrepInFlintDesktop(): void {
     if (!savedExportToken) return;
 
     const url = `flint://import?token=${savedExportToken}`;
+    void chrome.tabs.create({ url });
 
-    chrome.tabs.create({ url });
-
+    // Popups close immediately on navigation so window blur never fires.
+    // Use a plain timeout: if Flint is installed it handles the deep link
+    // within the OS; we show a fallback hint after the window stays open.
+    if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
     setFlintFallback(false);
-    const timer = setTimeout(() => {
+    fallbackTimerRef.current = setTimeout(() => {
       setFlintFallback(true);
     }, FLINT_NOT_INSTALLED_TIMEOUT_MS);
-
-    window.addEventListener("blur", () => clearTimeout(timer), { once: true });
   }
 
   if (view === "loading") {
@@ -139,7 +157,10 @@ export function Popup(): React.ReactElement {
     return (
       <div className="popup">
         <header className="popup-header">
-          <span className="logo">Flint</span>
+          <div className="popup-brand">
+            <img src={ICON_URL} alt="" className="popup-icon" width={24} height={24} />
+            <span className="logo">Flint Resume</span>
+          </div>
         </header>
         <form className="login-form" onSubmit={(e) => void handleLogin(e)}>
           <label>
@@ -174,7 +195,10 @@ export function Popup(): React.ReactElement {
     return (
       <div className="popup">
         <header className="popup-header">
-          <span className="logo">Flint</span>
+          <div className="popup-brand">
+            <img src={ICON_URL} alt="" className="popup-icon" width={24} height={24} />
+            <span className="logo">Flint Resume</span>
+          </div>
           <button className="btn-ghost" onClick={() => void handleLogout()}>
             Log out
           </button>
@@ -188,7 +212,10 @@ export function Popup(): React.ReactElement {
     return (
       <div className="popup">
         <header className="popup-header">
-          <span className="logo">Flint</span>
+          <div className="popup-brand">
+            <img src={ICON_URL} alt="" className="popup-icon" width={24} height={24} />
+            <span className="logo">Flint Resume</span>
+          </div>
           <button className="btn-ghost" onClick={() => void handleLogout()}>
             Log out
           </button>
@@ -199,7 +226,7 @@ export function Popup(): React.ReactElement {
           <p className="jd-method">{jd.extraction_method} extraction</p>
         </div>
         <button className="btn-primary" onClick={() => void handleSaveJD()}>
-          Save JD
+          Save job
         </button>
       </div>
     );
@@ -218,15 +245,28 @@ export function Popup(): React.ReactElement {
     return (
       <div className="popup">
         <header className="popup-header">
-          <span className="logo">Flint</span>
+          <div className="popup-brand">
+            <img src={ICON_URL} alt="" className="popup-icon" width={24} height={24} />
+            <span className="logo">Flint Resume</span>
+          </div>
         </header>
         <div className="jd-preview">
           <p className="jd-title">{jd.title || "Untitled Role"}</p>
           {jd.company && <p className="jd-company">{jd.company}</p>}
         </div>
-        <button className="btn-primary" onClick={handleOpenInFlint}>
-          Open in Flint
+        <button className="btn-primary" onClick={handleTailorInFlintResume}>
+          Tailor in Flint Resume
         </button>
+        <button
+          type="button"
+          className="btn-secondary"
+          onClick={handlePrepInFlintDesktop}
+        >
+          Prep in Flint (desktop)
+        </button>
+        <p className="hint hint-compact">
+          Tailor your resume on the web first. Use desktop for interview prep only.
+        </p>
         {flintFallback && (
           <p className="fallback-hint">
             Flint does not appear to be installed.{" "}
@@ -247,7 +287,10 @@ export function Popup(): React.ReactElement {
     return (
       <div className="popup">
         <header className="popup-header">
-          <span className="logo">Flint</span>
+          <div className="popup-brand">
+            <img src={ICON_URL} alt="" className="popup-icon" width={24} height={24} />
+            <span className="logo">Flint Resume</span>
+          </div>
         </header>
         <p className="error-text">{errorMessage ?? "Something went wrong."}</p>
         <button className="btn-ghost" onClick={() => setView("job_ready")}>

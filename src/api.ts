@@ -4,13 +4,9 @@ import type {
   SaveJDResponse,
 } from "./types.js";
 import { clearAuth } from "./storage.js";
+import { getApiBaseUrl } from "./urls.js";
 
-const API_BASE = (
-  typeof import.meta !== "undefined"
-    ? (import.meta as Record<string, Record<string, string>>).env
-        ?.VITE_API_BASE_URL
-    : undefined
-) ?? "http://localhost:8000";
+const API_BASE = getApiBaseUrl();
 
 async function request<T>(
   path: string,

@@ -1,4 +1,5 @@
 import type { ExtractedJD, PopupMessage } from "../src/types.js";
+import selectorsConfig from "./jd-selectors.json";
 
 const HEURISTIC_MIN_LENGTH = 100;
 
@@ -9,10 +10,7 @@ interface SiteSelectors {
   description: string[];
 }
 
-interface SelectorsConfig {
-  linkedin: SiteSelectors;
-  greenhouse: SiteSelectors;
-}
+type SelectorsConfig = typeof selectorsConfig;
 
 function queryFirst(selectors: string[]): string {
   for (const sel of selectors) {
@@ -61,10 +59,7 @@ function sanitizeText(raw: string): string {
 }
 
 async function extractJD(): Promise<ExtractedJD> {
-  const configUrl = chrome.runtime.getURL("content/jd-selectors.json");
-  const configResponse = await fetch(configUrl);
-  const config: SelectorsConfig = await configResponse.json();
-
+  const config: SelectorsConfig = selectorsConfig;
   const site = detectSite(config);
 
   let title = "";

@@ -11,7 +11,8 @@
     "exactOptionalPropertyTypes": true,
     "noFallthroughCasesInSwitch": true,
     "forceConsistentCasingInFileNames": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "resolveJsonModule": true
   },
   "include": ["**/*.ts", "**/*.tsx"],
   "exclude": ["node_modules", "dist"]
