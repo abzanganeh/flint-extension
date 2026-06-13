@@ -1,21 +1,16 @@
-type ImportMetaEnv = Record<string, string | undefined>;
-
-function _env(): ImportMetaEnv {
-  return typeof import.meta !== "undefined"
-    ? ((import.meta as unknown as { env: ImportMetaEnv }).env ?? {})
-    : {};
-}
-
+// Direct import.meta.env access is required so Vite's static-analysis
+// substitution can replace these at build time. Indirect access via a cast
+// or object spread bypasses the substitution and always resolves to "".
 export function getApiBaseUrl(): string {
-  return _env().VITE_API_BASE_URL ?? "http://localhost:8000";
+  return import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 }
 
 export function getWebAppBaseUrl(): string {
-  return _env().VITE_WEB_APP_BASE_URL ?? "http://localhost:3000";
+  return import.meta.env.VITE_WEB_APP_BASE_URL ?? "http://localhost:3000";
 }
 
 export function getGoogleClientId(): string {
-  return _env().VITE_GOOGLE_CLIENT_ID ?? "";
+  return import.meta.env.VITE_GOOGLE_CLIENT_ID ?? "";
 }
 
 export function buildTailorInFlintResumeUrl(jdId: string): string {
