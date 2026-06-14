@@ -75,6 +75,10 @@ At that point, the native host can be bundled with Phase 1.5 signed installers.
 ## Consequences
 
 - Extension popup opens `flint://import?token=<uuid>` via `chrome.tabs.create`.
+- The `flint://` URL carries **only** an opaque single-use UUID (the
+  Smart Resume export token). It never carries JD text, resume content,
+  user identifiers, or any other payload data. The token is exchanged
+  server-side for the actual context.
 - Token value is **never** written to `console`, `chrome.storage`, or any log.
 - Extension shows a 3-second fallback UI if Flint is not installed.
 - No native messaging host manifest, binary, or installer changes in Phase 2.

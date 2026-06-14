@@ -6,7 +6,6 @@ import {
   getExpiresAt,
   getRefreshToken,
   saveAuth,
-  updateAccessToken,
 } from "./storage.js";
 
 const ALARM_NAME = "token-refresh";
@@ -33,6 +32,9 @@ export async function getAccessTokenOrNull(): Promise<string | null> {
 }
 
 export async function refreshIfNeeded(): Promise<void> {
+  // A benign double-refresh can happen if the alarm-driven refresh and a
+  // popup-initiated refreshIfNeeded race. Both paths converge on saveAuth
+  // with rotated tokens, so the worst case is one extra refresh request.
   const expiresAt = await getExpiresAt();
   if (expiresAt === null) return;
 
@@ -53,13 +55,22 @@ async function _doRefresh(): Promise<void> {
 
   try {
     const data = await apiRefresh(refreshToken);
-    // Rotate both tokens on success.
     await saveAuth(data.access_token, data.refresh_token, data.expires_in, data.user);
   } catch {
     // Refresh failure means the session is gone; clear credentials so the
-    // popup shows the login form on next open.
-    await clearAuth();
-    await chrome.alarms.clear(ALARM_NAME);
+    // popup shows the login form on next open. Storage clear and alarm clear
+    // each get their own try/catch so a chrome API hiccup never leaves
+    // refresh in a half-failed state silently.
+    try {
+      await clearAuth();
+    } catch {
+      // Storage remove failure: best-effort. Next refresh attempt will retry.
+    }
+    try {
+      await chrome.alarms.clear(ALARM_NAME);
+    } catch {
+      // Alarm clear failure: harmless; the alarm fires at most every 25 min.
+    }
   }
 }
 

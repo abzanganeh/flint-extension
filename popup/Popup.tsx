@@ -6,6 +6,21 @@ import { apiSaveJD } from "../src/api.js";
 type View = "loading" | "login" | "not_on_job" | "job_ready" | "saving" | "saved" | "error";
 
 const FLINT_NOT_INSTALLED_TIMEOUT_MS = 3000;
+const RESTRICTED_URL_PREFIXES = [
+  "chrome://",
+  "chrome-extension://",
+  "edge://",
+  "about:",
+  "moz-extension://",
+  "view-source:",
+  "data:",
+  "file://",
+];
+
+function isRestrictedUrl(url: string | undefined): boolean {
+  if (!url) return true;
+  return RESTRICTED_URL_PREFIXES.some((prefix) => url.startsWith(prefix));
+}
 
 export function Popup(): React.ReactElement {
   const [view, setView] = useState<View>("loading");
@@ -14,6 +29,7 @@ export function Popup(): React.ReactElement {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [jd, setJd] = useState<ExtractedJD | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [notOnJobMessage, setNotOnJobMessage] = useState<string | null>(null);
   const [flintFallback, setFlintFallback] = useState(false);
   const [savedExportToken, setSavedExportToken] = useState<string | null>(null);
 
@@ -33,6 +49,15 @@ export function Popup(): React.ReactElement {
   async function _extractJD(): Promise<void> {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab?.id) {
+      setNotOnJobMessage(null);
+      setView("not_on_job");
+      return;
+    }
+
+    if (isRestrictedUrl(tab.url)) {
+      setNotOnJobMessage(
+        "Cannot access this page. Open a LinkedIn or Greenhouse job listing.",
+      );
       setView("not_on_job");
       return;
     }
@@ -42,8 +67,22 @@ export function Popup(): React.ReactElement {
         target: { tabId: tab.id },
         files: ["content/jd-extractor.js"],
       });
-    } catch {
-      // Content script may already be injected; ignore duplicate injection error.
+    } catch (err) {
+      // Two kinds of failure here:
+      // 1. The content script is already injected — chrome.scripting raises a
+      //    benign error we can ignore and proceed to sendMessage.
+      // 2. The tab is on a host the manifest does not allow (e.g. extension
+      //    pages slipped past the URL prefix check, restricted store pages).
+      //    In that case sendMessage will time out; fall through to "no
+      //    response" handling.
+      const message = err instanceof Error ? err.message : "";
+      if (message.includes("Cannot access")) {
+        setNotOnJobMessage(
+          "Cannot access this page. Open a LinkedIn or Greenhouse job listing.",
+        );
+        setView("not_on_job");
+        return;
+      }
     }
 
     const response = await new Promise<{ type: string; jd?: ExtractedJD; error?: string }>(
@@ -60,8 +99,10 @@ export function Popup(): React.ReactElement {
 
     if (response.type === "JD_RESULT" && response.jd && response.jd.text.length >= 100) {
       setJd(response.jd);
+      setNotOnJobMessage(null);
       setView("job_ready");
     } else {
+      setNotOnJobMessage(null);
       setView("not_on_job");
     }
   }
@@ -113,12 +154,23 @@ export function Popup(): React.ReactElement {
   }
 
   function handleOpenInFlint(): void {
+    // Closure correctness: this handler captures savedExportToken from the
+    // current render. The "Open in Flint" button only renders when
+    // view === "saved", which only happens after handleSaveJD has called
+    // setSavedExportToken and React has re-rendered. So the closure here
+    // always sees the freshly stored token, never the initial null.
     if (!savedExportToken) return;
 
     const url = `flint://import?token=${savedExportToken}`;
 
     chrome.tabs.create({ url });
 
+    // Heuristic fallback: if the OS does not switch focus away from the
+    // popup within 3s, assume Flint is not installed and surface the
+    // download link. Known limitation: blur also fires when the user clicks
+    // the address bar or another window, producing a false negative (no
+    // fallback shown even though Flint did not handle the URL). Documented
+    // in store/LISTING.md "Known limitations (Phase 2)".
     setFlintFallback(false);
     const timer = setTimeout(() => {
       setFlintFallback(true);
@@ -179,7 +231,10 @@ export function Popup(): React.ReactElement {
             Log out
           </button>
         </header>
-        <p className="hint">Navigate to a LinkedIn or Greenhouse job posting to capture it.</p>
+        <p className="hint">
+          {notOnJobMessage ??
+            "Navigate to a LinkedIn or Greenhouse job posting to capture it."}
+        </p>
       </div>
     );
   }
