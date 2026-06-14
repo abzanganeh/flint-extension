@@ -1,6 +1,7 @@
 import type { ExtractedJD, PopupMessage } from "../src/types.js";
 
 const HEURISTIC_MIN_LENGTH = 100;
+const EXTRACTION_TIMEOUT_MS = 5000;
 
 interface SiteSelectors {
   matches: string[];
@@ -56,11 +57,32 @@ function detectSite(config: SelectorsConfig): SiteSelectors | null {
 }
 
 function sanitizeText(raw: string): string {
-  // Return plain text only — no HTML, no script injection vector.
+  // Contract: callers MUST pass plain text (typically from element.textContent).
+  // This function only normalises whitespace; it does NOT strip HTML. The XSS
+  // guarantee comes from never reading innerHTML, never calling this on a
+  // raw HTML string. If a future caller passes raw HTML, tags will leak through.
   return raw.replace(/\s+/g, " ").trim();
 }
 
-async function extractJD(): Promise<ExtractedJD> {
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`Extraction timed out after ${ms}ms`));
+    }, ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err: unknown) => {
+        clearTimeout(timer);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      },
+    );
+  });
+}
+
+async function _extractJDInner(): Promise<ExtractedJD> {
   const configUrl = chrome.runtime.getURL("content/jd-selectors.json");
   const configResponse = await fetch(configUrl);
   const config: SelectorsConfig = await configResponse.json();
@@ -93,6 +115,10 @@ async function extractJD(): Promise<ExtractedJD> {
     url: window.location.href,
     extraction_method: method,
   };
+}
+
+function extractJD(): Promise<ExtractedJD> {
+  return withTimeout(_extractJDInner(), EXTRACTION_TIMEOUT_MS);
 }
 
 chrome.runtime.onMessage.addListener(
