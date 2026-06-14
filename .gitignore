@@ -3,3 +3,6 @@ dist/
 .env
 *.local
 coverage/
+key.pem
+*.pem
+web-ext-artifacts/

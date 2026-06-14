@@ -66,3 +66,21 @@ descriptions in one click and start a session pre-filled with the role details.
 | `http://localhost:8000/*` | Development: Smart Resume API on localhost |
 | `https://www.linkedin.com/jobs/*` | Extract job descriptions from LinkedIn |
 | `https://*.greenhouse.io/*` | Extract job descriptions from Greenhouse ATS |
+
+## Known limitations (Phase 2)
+
+- **TOTP not supported on extension login.** Users with two-factor
+  authentication enabled on Smart Resume cannot sign in through the
+  extension popup; the cookie-based 2FA challenge flow is web-only.
+  Workaround: sign in on the Smart Resume website to manage the account,
+  then disable TOTP temporarily to use the extension, or wait for Phase 3
+  (Supabase SSO) which will replace this flow.
+- **"Open in Flint" install detection is heuristic.** The popup waits
+  three seconds after launching `flint://` and shows a download link if
+  the OS has not switched focus. This produces a false negative when the
+  user clicks the browser address bar or another window during that
+  window — the download prompt is suppressed even though Flint did not
+  open. Re-clicking "Open in Flint" recovers.
+- **Restricted pages.** The extension cannot capture from `chrome://`,
+  `about:`, the Chrome Web Store, or other extension pages; the popup
+  surfaces a "Cannot access this page" hint in those cases.
