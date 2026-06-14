@@ -38,8 +38,28 @@ function sanitizeText(raw: string): string {
   return raw.replace(/\s+/g, " ").trim();
 }
 
+// Mirror of withTimeout from content/jd-extractor.ts. Keep in sync.
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`Extraction timed out after ${ms}ms`));
+    }, ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err: unknown) => {
+        clearTimeout(timer);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      },
+    );
+  });
+}
+
 beforeEach(() => {
   resetChromeStore();
+  vi.useRealTimers();
 });
 
 // --- LinkedIn structured extraction ---
@@ -146,5 +166,24 @@ describe("sanitizeText()", () => {
     const text = sanitizeText(queryFirst(["#job-details"], doc));
     expect(text).not.toContain("<script>");
     expect(text).toContain("Engineer role");
+  });
+});
+
+// --- Timeout guard ---
+
+describe("withTimeout()", () => {
+  it("rejects with a timeout error when the inner promise hangs", async () => {
+    vi.useFakeTimers();
+    const hanging = new Promise<string>(() => undefined);
+    const wrapped = withTimeout(hanging, 5000);
+
+    vi.advanceTimersByTime(5001);
+
+    await expect(wrapped).rejects.toThrow(/timed out/i);
+  });
+
+  it("resolves with the inner value when it settles before the deadline", async () => {
+    const fast = Promise.resolve("ok");
+    await expect(withTimeout(fast, 1000)).resolves.toBe("ok");
   });
 });
