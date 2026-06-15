@@ -51,7 +51,8 @@ export type PopupMessage =
   | { type: "GOOGLE_LOGIN" }
   | { type: "GOOGLE_LOGIN_RESULT"; result: GoogleLoginResult }
   | { type: "FETCH_PAGE_HTML"; url: string }
-  | { type: "PARSE_JD_FROM_URL"; url: string };
+  | { type: "PARSE_JD_FROM_URL"; url: string }
+  | { type: "OPEN_FLINT_DEEP_LINK"; url: string };
 
 export type FetchPageHtmlResult =
   | { html: string }

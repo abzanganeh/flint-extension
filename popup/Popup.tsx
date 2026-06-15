@@ -324,7 +324,8 @@ export function Popup(): React.ReactElement {
     if (!savedExportToken) return;
 
     const url = `flint://import?token=${savedExportToken}`;
-    void chrome.tabs.create({ url });
+    // Run in the service worker so tab cleanup survives popup close.
+    void chrome.runtime.sendMessage({ type: "OPEN_FLINT_DEEP_LINK", url });
 
     // Popups close immediately on navigation so window blur never fires.
     // Use a plain timeout: if Flint is installed it handles the deep link

@@ -3,6 +3,7 @@ import {
   handleRefreshAlarm,
   loginWithGoogle,
 } from "../src/auth.js";
+import { openFlintDeepLink } from "../src/flintDeepLink.js";
 import { extractJobPostingFromHtml } from "../src/jdParse.js";
 import type { GoogleLoginResult, ParseJdFromUrlResult, PopupMessage } from "../src/types.js";
 
@@ -68,6 +69,14 @@ chrome.runtime.onMessage.addListener(
           const error = err instanceof Error ? err.message : "Fetch failed";
           sendResponse({ error });
         });
+      return true;
+    }
+
+    if (message.type === "OPEN_FLINT_DEEP_LINK") {
+      openFlintDeepLink(message.url).catch(() => {
+        // Non-fatal: user can retry from the popup.
+      });
+      sendResponse({ ok: true });
       return true;
     }
 
