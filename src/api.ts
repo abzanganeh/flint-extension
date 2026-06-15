@@ -4,19 +4,9 @@ import type {
   SaveJDResponse,
 } from "./types.js";
 import { clearAuth } from "./storage.js";
+import { getApiBaseUrl } from "./urls.js";
 
-interface ViteImportMetaEnv {
-  readonly env?: { readonly VITE_API_BASE_URL?: string };
-}
-
-// `import.meta.env` is provided by Vite at build time and by Vitest at test
-// time. In raw service-worker / bare browser contexts it may be undefined,
-// so we cast through `unknown` and read defensively. Casting through unknown
-// satisfies TS without papering over a real structural mismatch.
-const API_BASE: string =
-  (typeof import.meta !== "undefined"
-    ? (import.meta as unknown as ViteImportMetaEnv).env?.VITE_API_BASE_URL
-    : undefined) ?? "http://localhost:8000";
+const API_BASE = getApiBaseUrl();
 
 // Contract: a 401 response anywhere in the API layer clears stored auth and
 // throws AuthError. Callers MUST NOT call clearAuth themselves on a 401 —
@@ -80,6 +70,16 @@ export async function apiRefresh(
   return request<ExtensionLoginResponse>("/api/auth/extension/refresh", {
     method: "POST",
     body: JSON.stringify({ refresh_token: refreshToken }),
+  });
+}
+
+export async function apiGoogleCallback(
+  code: string,
+  redirectUri: string,
+): Promise<ExtensionLoginResponse> {
+  return request<ExtensionLoginResponse>("/api/auth/extension/callback", {
+    method: "POST",
+    body: JSON.stringify({ provider: "google", code, redirect_uri: redirectUri }),
   });
 }
 

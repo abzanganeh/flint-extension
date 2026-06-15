@@ -8,8 +8,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { resetChromeStore } from "../setup.js";
 
-// Helpers that mirror the private functions in jd-extractor.ts so we can
-// test them without loading the full content script.
+// Mirror private functions for testing without loading the full content script.
 
 function queryFirst(selectors: string[], doc: Document): string {
   for (const sel of selectors) {
@@ -17,25 +16,75 @@ function queryFirst(selectors: string[], doc: Document): string {
       const el = doc.querySelector(sel);
       if (el) return (el.textContent ?? "").trim();
     } catch {
-      /* ignore invalid selectors */
+      // ignore invalid selectors
     }
   }
   return "";
 }
 
-function extractHeuristic(doc: Document): string {
-  const candidates = Array.from(doc.querySelectorAll("p, div, section, article"));
+function sanitizeText(raw: string): string {
+  return raw.replace(/\s+/g, " ").trim();
+}
+
+function stripHtml(html: string, doc: Document): string {
+  const div = doc.createElement("div");
+  div.innerHTML = html;
+  return div.textContent ?? div.innerText ?? html;
+}
+
+const JD_KEYWORDS = [
+  "responsibilities", "requirements", "qualifications", "experience",
+  "skills", "you will", "we are looking", "bachelor", "minimum",
+  "proficiency", "collaborate", "develop", "design", "build", "maintain",
+];
+
+function jdKeywordScore(text: string): number {
+  const lower = text.toLowerCase();
+  const hits = JD_KEYWORDS.filter((kw) => lower.includes(kw)).length;
+  return hits / JD_KEYWORDS.length;
+}
+
+function extractScoredHeuristic(doc: Document): string {
+  const candidates = Array.from(
+    doc.querySelectorAll("p, div, section, article, main"),
+  );
   let best = "";
+  let bestScore = -1;
   for (const el of candidates) {
-    if (el.children.length > 20) continue;
-    const text = (el.textContent ?? "").trim();
-    if (text.length > best.length && text.length >= 100) best = text;
+    if (el.children.length > 30) continue;
+    const text = sanitizeText(el.textContent ?? "");
+    if (text.length < 200) continue;
+    const words = text.split(/\s+/);
+    const hyphenWords = words.filter((w) => w.includes("-")).length;
+    if (words.length > 0 && hyphenWords / words.length > 0.4) continue;
+    const kwScore = jdKeywordScore(text);
+    const lengthFactor = Math.min(text.length / 5000, 1);
+    const score = kwScore * 0.7 + lengthFactor * 0.3;
+    if (score > bestScore) { bestScore = score; best = text; }
   }
   return best;
 }
 
-function sanitizeText(raw: string): string {
-  return raw.replace(/\s+/g, " ").trim();
+function extractFromJsonLd(doc: Document): { title: string; company: string; text: string } | null {
+  const scripts = Array.from(doc.querySelectorAll('script[type="application/ld+json"]'));
+  for (const script of scripts) {
+    try {
+      const data = JSON.parse(script.textContent ?? "");
+      const entries: unknown[] = Array.isArray(data["@graph"]) ? data["@graph"] : [data];
+      for (const entry of entries) {
+        if (typeof entry !== "object" || entry === null) continue;
+        const job = entry as Record<string, unknown>;
+        if (job["@type"] !== "JobPosting") continue;
+        const description = sanitizeText(stripHtml(String(job["description"] ?? ""), doc));
+        if (description.length < 200) continue;
+        const orgName = typeof job["hiringOrganization"] === "object" && job["hiringOrganization"] !== null
+          ? String((job["hiringOrganization"] as Record<string, unknown>)["name"] ?? "")
+          : "";
+        return { title: sanitizeText(String(job["title"] ?? "")), company: sanitizeText(orgName), text: description };
+      }
+    } catch { /* skip malformed */ }
+  }
+  return null;
 }
 
 // Mirror of withTimeout from content/jd-extractor.ts. Keep in sync.
@@ -73,6 +122,8 @@ describe("LinkedIn structured extraction", () => {
         We are looking for an experienced engineer to join our distributed
         systems team. You will design, build, and maintain high-throughput
         data pipelines using Rust and Kafka. Strong fundamentals required.
+        Responsibilities include mentoring junior engineers and collaborating
+        closely with product and design teams on technical requirements.
       </div>
     `;
     const parser = new DOMParser();
@@ -84,7 +135,7 @@ describe("LinkedIn structured extraction", () => {
 
     expect(title).toBe("Senior Software Engineer");
     expect(company).toBe("Acme Corp");
-    expect(description.length).toBeGreaterThan(100);
+    expect(description.length).toBeGreaterThan(200);
   });
 });
 
@@ -97,7 +148,9 @@ describe("Greenhouse structured extraction", () => {
       <div id="content">
         Join our team as a backend engineer. You will build RESTful APIs
         using FastAPI and PostgreSQL. We value code quality, testing, and
-        clear technical communication across teams.
+        clear technical communication across teams. Requirements include
+        three or more years of experience with Python and SQL databases.
+        Preferred qualifications include experience with cloud platforms.
       </div>
     `;
     const parser = new DOMParser();
@@ -107,59 +160,106 @@ describe("Greenhouse structured extraction", () => {
     const description = sanitizeText(queryFirst(["#content"], doc));
 
     expect(title).toBe("Backend Engineer");
-    expect(description.length).toBeGreaterThan(100);
+    expect(description.length).toBeGreaterThan(200);
   });
 });
 
-// --- Heuristic fallback ---
+// --- JSON-LD extraction ---
 
-describe("extractHeuristic()", () => {
-  it("picks the longest text block over 100 characters", () => {
+describe("JSON-LD JobPosting extraction", () => {
+  it("extracts title, company, and description from schema.org JSON-LD", () => {
+    const payload = {
+      "@type": "JobPosting",
+      "title": "Data Engineer",
+      "hiringOrganization": { "@type": "Organization", "name": "Kaiser Health" },
+      "description": "<p>We are seeking a Data Engineer with experience in PySpark, Delta Lake, and distributed systems. Responsibilities include designing Medallion architecture layers, maintaining ETL pipelines, and collaborating with data science teams. Minimum qualifications: Bachelor degree and 3 years of data engineering experience.</p>",
+    };
+    const html = `<script type="application/ld+json">${JSON.stringify(payload)}</script>`;
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, "text/html");
+
+    const result = extractFromJsonLd(doc);
+    expect(result).not.toBeNull();
+    expect(result!.title).toBe("Data Engineer");
+    expect(result!.company).toBe("Kaiser Health");
+    expect(result!.text).toContain("Data Engineer");
+    expect(result!.text).toContain("Responsibilities");
+    expect(result!.text).not.toContain("<p>");
+  });
+
+  it("handles @graph array wrapper", () => {
+    const payload = {
+      "@graph": [
+        { "@type": "WebPage", "name": "Careers" },
+        {
+          "@type": "JobPosting",
+          "title": "ML Engineer",
+          "hiringOrganization": { "name": "DataCo" },
+          "description": "We are looking for a machine learning engineer to develop and maintain model pipelines. Requirements include experience with Python, TensorFlow, and distributed training. You will collaborate with research and product teams. Minimum qualifications are a Bachelor degree in CS or related field and 2 years experience.",
+        },
+      ],
+    };
+    const html = `<script type="application/ld+json">${JSON.stringify(payload)}</script>`;
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, "text/html");
+
+    const result = extractFromJsonLd(doc);
+    expect(result).not.toBeNull();
+    expect(result!.title).toBe("ML Engineer");
+    expect(result!.company).toBe("DataCo");
+  });
+
+  it("returns null for non-JobPosting types", () => {
+    const payload = { "@type": "Organization", "name": "Acme" };
+    const html = `<script type="application/ld+json">${JSON.stringify(payload)}</script>`;
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, "text/html");
+
+    expect(extractFromJsonLd(doc)).toBeNull();
+  });
+});
+
+// --- Scored heuristic ---
+
+describe("extractScoredHeuristic()", () => {
+  it("picks a keyword-rich block over a longer metadata block", () => {
+    const jdText = "We are looking for an experienced engineer to join our team. " +
+      "Responsibilities include designing scalable data pipelines, collaborating with " +
+      "product teams, and maintaining high-quality code. Requirements include 3 or more " +
+      "years of experience with Python and SQL. Qualifications: Bachelor degree in CS. " +
+      "You will build and maintain distributed systems. Skills: PySpark, Delta Lake, AWS.";
+    // Simulate ATS metadata noise: long but hyphen-heavy (key=value style).
+    const noise = Array.from({ length: 60 }, (_, i) => `field-${i}-value-data-info-tag`).join(" ");
+
     const html = `
-      <div>Short text</div>
-      <p>This is a much longer job description that has well over one hundred
-         characters in total and should be selected by the heuristic fallback
-         when no structured selectors match the page.</p>
-      <div>Another short snippet.</div>
+      <div class="nav">${noise}</div>
+      <div class="description">${jdText}</div>
     `;
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, "text/html");
 
-    const result = extractHeuristic(doc);
-    expect(result.length).toBeGreaterThan(100);
-    expect(result).toContain("heuristic fallback");
+    const result = extractScoredHeuristic(doc);
+    expect(result).toContain("Responsibilities");
+    expect(result).not.toContain("field-0-value");
   });
 
-  it("returns empty string when no block exceeds 100 chars", () => {
+  it("returns empty string when no block has enough content", () => {
     const html = `<div>tiny</div><p>also small</p>`;
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, "text/html");
-
-    const result = extractHeuristic(doc);
-    expect(result).toBe("");
+    expect(extractScoredHeuristic(doc)).toBe("");
   });
 });
 
 // --- XSS safety ---
 
 describe("sanitizeText()", () => {
-  it("returns plain-text string (HTML stripping is done upstream by textContent)", () => {
-    // sanitizeText only normalises whitespace. The XSS guarantee comes from
-    // using element.textContent (never innerHTML) before calling sanitizeText.
-    // Here we verify the whitespace-normalisation contract only.
-    const raw = "  Engineer role    at   Acme Corp  ";
-    const result = sanitizeText(raw);
-    expect(result).toBe("Engineer role at Acme Corp");
-  });
-
   it("collapses whitespace", () => {
     const raw = "Title   at   Company\n\n   Description";
     expect(sanitizeText(raw)).toBe("Title at Company Description");
   });
 
   it("textContent extraction via DOM never includes script tags", () => {
-    // Demonstrates that the actual extraction path (via DOM textContent) is
-    // XSS-safe — the raw HTML is never returned.
     const html = `<div id="job-details"><script>alert(1)<\/script>Engineer role at Acme Corp</div>`;
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, "text/html");
@@ -169,7 +269,35 @@ describe("sanitizeText()", () => {
   });
 });
 
-// --- Timeout guard ---
+function cleanJdText(text: string): string {
+  let cleaned = sanitizeText(text);
+  const noisy =
+    cleaned.includes("Skip to main content") ||
+    (cleaned.match(/custom_fields\./g) ?? []).length >= 1;
+  const match = /Job Summary:/i.exec(cleaned);
+  if (match && (noisy || (match.index > 0 && match.index < cleaned.length * 0.6))) {
+    cleaned = cleaned.slice(match.index).trim();
+  }
+  if ((cleaned.match(/custom_fields\./g) ?? []).length >= 3) {
+    const summaryIdx = cleaned.search(/Job Summary:/i);
+    if (summaryIdx >= 0) cleaned = cleaned.slice(summaryIdx).trim();
+    else return "";
+  }
+  return cleaned;
+}
+
+describe("cleanJdText()", () => {
+  it("trims iCIMS metadata prefix and keeps Job Summary body", () => {
+    const noisy =
+      "Skip to main content custom_fields.ReqID-123 custom_fields.Shift-Day " +
+      "custom_fields.PayRange-$100000 Job Summary: Build data pipelines. " +
+      "Responsibilities include PySpark and Delta Lake. Requirements: 3 years experience.";
+    const cleaned = cleanJdText(noisy);
+    expect(cleaned.startsWith("Job Summary:")).toBe(true);
+    expect(cleaned).not.toContain("custom_fields");
+    expect(cleaned).not.toContain("Skip to main content");
+  });
+});
 
 describe("withTimeout()", () => {
   it("rejects with a timeout error when the inner promise hangs", async () => {
@@ -180,6 +308,7 @@ describe("withTimeout()", () => {
     vi.advanceTimersByTime(5001);
 
     await expect(wrapped).rejects.toThrow(/timed out/i);
+    vi.useRealTimers();
   });
 
   it("resolves with the inner value when it settles before the deadline", async () => {

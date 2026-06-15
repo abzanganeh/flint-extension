@@ -7,8 +7,9 @@ LinkedIn and Greenhouse and opens them in Flint desktop with one click.
 
 - Email/password login against Smart Resume API
 - JD extraction from LinkedIn and Greenhouse job pages
-- Save JD to Smart Resume (`POST /api/job-descriptions`)
-- Open in Flint via `flint://import?token=` deep link
+- Save job to Flint Resume (`POST /api/job-descriptions`)
+- **Tailor in Flint Resume** — opens web wizard with JD pre-filled
+- **Prep in Flint (desktop)** — optional shortcut with JD-only handoff (`flint://import?token=`)
 
 Not in Phase 2: autofill, Supabase SSO, bidirectional IPC.
 
@@ -41,6 +42,7 @@ npm run lint:ext   # web-ext lint against dist/
 | Variable | Default | Purpose |
 |---|---|---|
 | `VITE_API_BASE_URL` | `http://localhost:8000` | Smart Resume API base URL |
+| `VITE_WEB_APP_BASE_URL` | `http://localhost:3000` | Flint Resume web app (tailoring wizard) |
 
 ## Security notes
 

@@ -40,7 +40,24 @@ export interface ExtensionLoginResponse {
   user: UserInfo;
 }
 
+export type GoogleLoginResult =
+  | { success: true; user: UserInfo }
+  | { success: false; error: string };
+
 export type PopupMessage =
   | { type: "EXTRACT_JD" }
   | { type: "JD_RESULT"; jd: ExtractedJD | null }
-  | { type: "JD_ERROR"; error: string };
+  | { type: "JD_ERROR"; error: string }
+  | { type: "GOOGLE_LOGIN" }
+  | { type: "GOOGLE_LOGIN_RESULT"; result: GoogleLoginResult }
+  | { type: "FETCH_PAGE_HTML"; url: string }
+  | { type: "PARSE_JD_FROM_URL"; url: string }
+  | { type: "OPEN_FLINT_DEEP_LINK"; url: string };
+
+export type FetchPageHtmlResult =
+  | { html: string }
+  | { error: string };
+
+export type ParseJdFromUrlResult =
+  | { jd: { title: string; company: string; text: string } | null }
+  | { error: string };

@@ -1,28 +1,31 @@
 {
   "manifest_version": 3,
-  "name": "Flint — AI Interview Copilot",
+  "name": "Flint Resume",
   "version": "0.1.0",
-  "description": "Capture job descriptions and send them to Flint desktop with one click.",
+  "description": "Capture job postings and tailor your resume in Flint Resume.",
   "permissions": [
     "storage",
     "activeTab",
     "scripting",
-    "alarms"
+    "alarms",
+    "identity",
+    "tabs"
   ],
   "host_permissions": [
     "http://localhost:8000/*",
-    "https://www.linkedin.com/jobs/*",
-    "https://linkedin.com/jobs/*",
-    "https://*.greenhouse.io/*"
+    "http://localhost:3000/*",
+    "https://www.linkedin.com/*",
+    "https://linkedin.com/*",
+    "https://*.greenhouse.io/*",
+    "https://*/*"
   ],
   "background": {
     "service_worker": "background/service-worker.js",
-    "scripts": ["background/service-worker.js"],
     "type": "module"
   },
   "action": {
     "default_popup": "popup/index.html",
-    "default_title": "Flint",
+    "default_title": "Flint Resume",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",
@@ -41,7 +44,9 @@
       "matches": [
         "https://www.linkedin.com/jobs/*",
         "https://linkedin.com/jobs/*",
-        "https://*.greenhouse.io/*"
+        "https://*.greenhouse.io/*",
+        "https://jobright.ai/jobs/*",
+        "https://www.jobright.ai/jobs/*"
       ],
       "js": ["content/jd-extractor.js"],
       "run_at": "document_idle"
@@ -59,7 +64,9 @@
       "matches": [
         "https://www.linkedin.com/jobs/*",
         "https://linkedin.com/jobs/*",
-        "https://*.greenhouse.io/*"
+        "https://*.greenhouse.io/*",
+        "https://jobright.ai/jobs/*",
+        "https://www.jobright.ai/jobs/*"
       ]
     }
   ]
