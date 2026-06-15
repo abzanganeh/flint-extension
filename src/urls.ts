@@ -13,13 +13,19 @@ export function getGoogleClientId(): string {
   return import.meta.env.VITE_GOOGLE_CLIENT_ID ?? "";
 }
 
-export function buildTailorInFlintResumeUrl(jdId: string): string {
+export function buildTailorInFlintResumeUrl(
+  jdId: string,
+  options?: { reviewRecommended?: boolean },
+): string {
   const base = getWebAppBaseUrl().replace(/\/$/, "");
   const params = new URLSearchParams({
     jd_id: jdId,
     source: "extension",
     step: "jd",
   });
+  if (options?.reviewRecommended) {
+    params.set("jd_review", "1");
+  }
   return `${base}/session/new?${params.toString()}`;
 }
 

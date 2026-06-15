@@ -66,6 +66,76 @@ describe("extractJobPostingFromHtml", () => {
     expect(result!.text).toContain("- Own ML powered features");
     expect(result!.text).toMatch(/Required Qualifications/i);
   });
+
+  it("prepends Jobright metadata header from helper JSON script", () => {
+    const jobrightLd = {
+      "@type": "JobPosting",
+      title: "[Remote] Machine Learning Engineer",
+      hiringOrganization: { name: "Calendly" },
+      description:
+        "<p>Note: The job is a remote job. Calendly is a company that relies on innovation in data, analytics, and AI. " +
+        "They are looking for a Machine Learning Engineer to execute the full machine learning lifecycle.</p>" +
+        "<p>Responsibilities</p><ul><li>Own ML powered features from design through deployment</li></ul>" +
+        "<p>Skills</p><ul><li>4+ years of industry experience in applied Machine Learning</li></ul>",
+    };
+    const jobrightHelper = {
+      jobResult: {
+        jobTitle: "Machine Learning Engineer",
+        jobLocation: "United States",
+        isRemote: true,
+        workModel: "Remote",
+        salaryDesc: "$203K/yr - $245K/yr",
+        employmentType: "Full-time",
+        jobSeniority: "Mid Level",
+        minYearsOfExperience: 4,
+        jobSummary:
+          "Calendly is a company that relies on innovation in data, analytics, and AI to enhance customer experiences.",
+        recommendationTags: ["No H1B"],
+        jdCoreSkills: [{ skill: "Machine Learning" }, { skill: "PyTorch" }, { skill: "Python" }],
+      },
+      companyResult: {
+        companyName: "Calendly",
+        companyCategories: "Enterprise Software, Software, Collaboration",
+      },
+    };
+    const html =
+      `<html><head>` +
+      `<script type="application/ld+json">${JSON.stringify(jobrightLd)}</script>` +
+      `<script id="jobright-helper-job-detail-info" type="application/json">${JSON.stringify(jobrightHelper)}</script>` +
+      `</head></html>`;
+    const result = extractJobPostingFromHtml(html);
+    expect(result).not.toBeNull();
+    expect(result!.text.startsWith("Machine Learning Engineer")).toBe(true);
+    expect(result!.text).toContain("Calendly | United States | Remote | Full-time | Mid Level");
+    expect(result!.text).toContain("Salary: $203K/yr - $245K/yr");
+    expect(result!.text).toContain("Experience: 4+ years");
+    expect(result!.text).toContain("Industry: Enterprise Software, Software, Collaboration");
+    expect(result!.text).toContain("Tags: No H1B");
+    expect(result!.text).toContain("Technologies: Machine Learning, PyTorch, Python");
+    expect(result!.text).toContain("Calendly is a company that relies on innovation");
+    expect(result!.text).toContain("Responsibilities");
+  });
+
+  it("keeps Technologies line intact after a second finalize pass", () => {
+    const header =
+      "Machine Learning Engineer\nTags: No H1B\n\nTechnologies: Machine Learning, PyTorch, Python";
+    const body =
+      "Calendly is hiring.\n\nResponsibilities:\n- Own ML powered features\n\nRequired Qualifications:\n- 4+ years experience";
+    const once = finalizeJdText(`${header}\n\n${body}`);
+    const twice = finalizeJdText(once);
+    expect(twice).toContain("Technologies: Machine Learning, PyTorch, Python");
+    expect(twice).not.toMatch(/Core\n\nSkills:/);
+  });
+
+  it("preserves JSON-LD intro paragraph before Responsibilities section", () => {
+    const text =
+      "Calendly is a company that relies on innovation in data, analytics, and AI to enhance customer experiences. " +
+      "They are looking for a Machine Learning Engineer to execute the full machine learning lifecycle.\n\n" +
+      "Responsibilities:\n- Own ML powered features from design through deployment";
+    const cleaned = cleanJdText(text);
+    expect(cleaned).toContain("Calendly is a company that relies on innovation");
+    expect(cleaned).toContain("Responsibilities:");
+  });
 });
 
 describe("pickBetterJd", () => {

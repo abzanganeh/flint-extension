@@ -3,7 +3,8 @@ import type { ExtractedJD, GoogleLoginResult, ParseJdFromUrlResult } from "../sr
 import { getAccessTokenOrNull, login, logout } from "../src/auth.js";
 import { apiSaveJD } from "../src/api.js";
 import { buildTailorInFlintResumeUrl, getGoogleClientId } from "../src/urls.js";
-import { pickBetterJd, scoreJdText, finalizeJdText, extractJobPostingFromHtml } from "../src/jdParse.js";
+import { isUncertainJdSource } from "../src/jdCompleteness.js";
+import { pickBetterJd, scoreJdText, finalizeJdText, extractJobPostingFromHtml, truncateJdText } from "../src/jdParse.js";
 
 const GOOGLE_ENABLED = Boolean(getGoogleClientId());
 
@@ -220,7 +221,13 @@ export function Popup(): React.ReactElement {
       bestParsed.text.trim().length >= 200 &&
       (structuredParsed || scoreJdText(finalizeJdText(bestParsed.text)) >= 0)
     ) {
-      const finalText = finalizeJdText(bestParsed.text);
+      const structuredWinner =
+        structuredParsed !== null &&
+        bestParsed.text === structuredParsed.text &&
+        bestParsed.title === structuredParsed.title;
+      const finalText = structuredWinner
+        ? truncateJdText(bestParsed.text)
+        : finalizeJdText(bestParsed.text);
       setJd({
         title: bestParsed.title || tab.title || "Untitled Role",
         company: bestParsed.company,
@@ -305,8 +312,12 @@ export function Popup(): React.ReactElement {
   }
 
   function handleTailorInFlintResume(): void {
-    if (!savedJdId) return;
-    void chrome.tabs.create({ url: buildTailorInFlintResumeUrl(savedJdId) });
+    if (!savedJdId || !jd) return;
+    void chrome.tabs.create({
+      url: buildTailorInFlintResumeUrl(savedJdId, {
+        reviewRecommended: isUncertainJdSource(jd.url, jd.extraction_method),
+      }),
+    });
   }
 
   function handlePrepInFlintDesktop(): void {

@@ -75,8 +75,9 @@ function polishStructuredJdText(text: string): string {
   return text
     .replace(/^Note:\s*The job is a remote job[^.\n]*\.\s*/i, "")
     .replace(/^Note:\s*[^.\n]+\.\s*/i, "")
-    .replace(/^\s*Skills\s*$/gim, "Required Qualifications")
+    .replace(/^\s*Skills\s*$/gim, "Required Qualifications:")
     .replace(/^\s*Skills:\s*$/gim, "Required Qualifications:")
+    .replace(/\bRequired Qualifications\b(?!:)/g, "Required Qualifications:")
     .replace(/\n{3,}/g, "\n\n")
     .replace(/\bCompany Overview\b/i, "Company")
     .trim();
@@ -86,13 +87,135 @@ function normalizeJobTitle(title: string): string {
   return sanitizeText(title.replace(/^\[[^\]]+\]\s*/, ""));
 }
 
+interface JobrightJobResult {
+  jobTitle?: string;
+  jobLocation?: string;
+  isRemote?: boolean;
+  workModel?: string;
+  salaryDesc?: string;
+  employmentType?: string;
+  jobSeniority?: string;
+  minYearsOfExperience?: number;
+  jobSummary?: string;
+  recommendationTags?: string[];
+  jdCoreSkills?: Array<{ skill?: string }>;
+  companyResult?: { companyCategories?: string; companyName?: string };
+}
+
+interface JobrightDetailPayload {
+  jobResult?: JobrightJobResult;
+  companyResult?: { companyCategories?: string; companyName?: string };
+}
+
+function parseJobrightDetailFromHtml(html: string): JobrightJobResult | null {
+  const pattern =
+    /<script[^>]*id=["']jobright-helper-job-detail-info["'][^>]*>([\s\S]*?)<\/script>/i;
+  const match = pattern.exec(html);
+  if (!match?.[1]) return null;
+  try {
+    const data = JSON.parse(match[1]) as JobrightDetailPayload;
+    const jobResult = data.jobResult;
+    if (!jobResult) return null;
+    return {
+      ...jobResult,
+      companyResult: jobResult.companyResult ?? data.companyResult,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function buildJobrightHeader(
+  job: JobrightJobResult,
+  title: string,
+  company: string,
+  includeSummary: boolean,
+): string {
+  const lines: string[] = [];
+  const roleTitle = normalizeJobTitle(title || job.jobTitle || "Untitled Role");
+  lines.push(roleTitle);
+
+  const meta: string[] = [];
+  if (company) meta.push(company);
+  if (job.jobLocation) meta.push(job.jobLocation);
+  if (job.workModel) meta.push(job.workModel);
+  else if (job.isRemote) meta.push("Remote");
+  if (job.employmentType) meta.push(job.employmentType);
+  if (job.jobSeniority) meta.push(job.jobSeniority);
+  if (meta.length > 1) lines.push(meta.join(" | "));
+
+  const details: string[] = [];
+  if (job.salaryDesc) details.push(`Salary: ${job.salaryDesc}`);
+  if (typeof job.minYearsOfExperience === "number" && job.minYearsOfExperience > 0) {
+    details.push(`Experience: ${job.minYearsOfExperience}+ years`);
+  }
+  if (details.length) lines.push(details.join(" | "));
+
+  if (includeSummary && job.jobSummary?.trim()) {
+    lines.push("", job.jobSummary.trim());
+  }
+
+  const industry = job.companyResult?.companyCategories?.trim();
+  if (industry) lines.push("", `Industry: ${industry}`);
+
+  if (job.recommendationTags?.length) {
+    lines.push(`Tags: ${job.recommendationTags.join(", ")}`);
+  }
+
+  const skills = (job.jdCoreSkills ?? [])
+    .map((s) => s.skill?.trim())
+    .filter((s): s is string => Boolean(s));
+  if (skills.length) {
+    lines.push("", `Technologies: ${skills.join(", ")}`);
+  }
+
+  return lines.join("\n").trim();
+}
+
+function enrichWithJobrightDetail(parsed: ParsedJD, html: string): ParsedJD {
+  const job = parseJobrightDetailFromHtml(html);
+  if (!job) return parsed;
+
+  const summary = job.jobSummary?.trim() ?? "";
+  const bodyHasSummary =
+    summary.length > 40 &&
+    parsed.text.includes(summary.slice(0, Math.min(80, summary.length)));
+
+  const header = buildJobrightHeader(
+    job,
+    parsed.title || job.jobTitle || "",
+    parsed.company || job.companyResult?.companyName || "",
+    !bodyHasSummary,
+  );
+
+  if (!header) return parsed;
+
+  const titleLine = header.split("\n")[0]?.trim();
+  const finalizedBody = finalizeJdText(parsed.text);
+  if (titleLine && finalizedBody.startsWith(titleLine)) {
+    return { ...parsed, text: finalizedBody };
+  }
+
+  const combined = `${header}\n\n${finalizedBody}`.trim();
+  return {
+    ...parsed,
+    title: normalizeJobTitle(parsed.title || job.jobTitle || ""),
+    company: parsed.company || job.companyResult?.companyName || "",
+    text: truncateJdText(combined),
+  };
+}
+
 export function formatJdSections(text: string): string {
   return text
     .replace(
-      /\s*(Job Summary:|Responsibilities and Accountabilities:|Essential Responsibilities:|Minimum Qualifications:|Preferred Qualifications:|Required Qualifications:|Qualifications:|Qualification:|Required:|Benefits:|Company Overview:|Company:|Skills:|Responsibilities:)/gi,
+      /\s*(Job Summary:|Responsibilities and Accountabilities:|Essential Responsibilities:|Minimum Qualifications:|Preferred Qualifications:|Required Qualifications:|Qualifications:|Qualification:|Required:|Benefits:|Company Overview:|Company:|Technologies:|(?<!(?:Core |Key |Required )?)Skills:|Responsibilities:)/gi,
       "\n\n$1",
     )
-    .replace(/(\n|^)(Responsibilities|Qualification|Qualifications|Benefits|Skills|Required)(\n|$)/gi, "\n\n$2:\n")
+    .replace(
+      /(\n|^)(Responsibilities|Qualification|Qualifications|Benefits|Required)(\n|$)/gi,
+      "\n\n$2:\n",
+    )
+    .replace(/(\n|^)(?<!(?:Core |Key |Required )?)Skills(\n|$)/gi, "\n\nSkills:\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
@@ -188,8 +311,15 @@ export function cleanJdText(text: string): string {
     }
   }
 
-  if (earliestMarker > 0 && (noisy || earliestMarker < cleaned.length * 0.6)) {
-    cleaned = cleaned.slice(earliestMarker).trim();
+  if (earliestMarker > 0) {
+    const before = cleaned.slice(0, earliestMarker).trim();
+    const keepPreamble =
+      before.length >= 60 &&
+      !isMetadataHeavy(before) &&
+      !isJobAggregatorNoise(before);
+    if (!keepPreamble && (noisy || earliestMarker < cleaned.length * 0.6)) {
+      cleaned = cleaned.slice(earliestMarker).trim();
+    }
   }
 
   if ((cleaned.match(/custom_fields\./g) ?? []).length >= 3) {
@@ -249,22 +379,31 @@ function parseJsonLdJobPosting(rawJson: string): ParsedJD | null {
 }
 
 export function extractJobPostingFromHtml(html: string): ParsedJD | null {
+  let parsed: ParsedJD | null = null;
+
   if (typeof DOMParser !== "undefined") {
     const doc = new DOMParser().parseFromString(html, "text/html");
     const scripts = Array.from(doc.querySelectorAll('script[type="application/ld+json"]'));
     for (const script of scripts) {
-      const parsed = parseJsonLdJobPosting(script.textContent ?? "");
-      if (parsed) return parsed;
+      parsed = parseJsonLdJobPosting(script.textContent ?? "");
+      if (parsed) break;
     }
   }
 
-  const pattern = /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
-  let match: RegExpExecArray | null;
-  while ((match = pattern.exec(html)) !== null) {
-    const parsed = parseJsonLdJobPosting(match[1] ?? "");
-    if (parsed) return parsed;
+  if (!parsed) {
+    const pattern = /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(html)) !== null) {
+      parsed = parseJsonLdJobPosting(match[1] ?? "");
+      if (parsed) break;
+    }
   }
-  return null;
+
+  if (parsed) {
+    parsed = enrichWithJobrightDetail(parsed, html);
+  }
+
+  return parsed;
 }
 
 export function scoreJdText(text: string): number {
