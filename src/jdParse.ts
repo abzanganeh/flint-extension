@@ -116,10 +116,10 @@ function parseJobrightDetailFromHtml(html: string): JobrightJobResult | null {
     const data = JSON.parse(match[1]) as JobrightDetailPayload;
     const jobResult = data.jobResult;
     if (!jobResult) return null;
-    return {
-      ...jobResult,
-      companyResult: jobResult.companyResult ?? data.companyResult,
-    };
+    const companyResult = jobResult.companyResult ?? data.companyResult;
+    return companyResult
+      ? { ...jobResult, companyResult }
+      : { ...jobResult };
   } catch {
     return null;
   }

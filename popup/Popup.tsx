@@ -145,6 +145,21 @@ async function _extractJdFromTab(tabId: number): Promise<ExtractedJD | null> {
 type View = "loading" | "login" | "not_on_job" | "job_ready" | "saving" | "saved" | "error";
 
 const FLINT_NOT_INSTALLED_TIMEOUT_MS = 3000;
+const RESTRICTED_URL_PREFIXES = [
+  "chrome://",
+  "chrome-extension://",
+  "edge://",
+  "about:",
+  "moz-extension://",
+  "view-source:",
+  "data:",
+  "file://",
+];
+
+function isRestrictedUrl(url: string | undefined): boolean {
+  if (!url) return true;
+  return RESTRICTED_URL_PREFIXES.some((prefix) => url.startsWith(prefix));
+}
 
 // chrome.runtime.getURL resolves correctly inside the extension bundle.
 const ICON_URL = typeof chrome !== "undefined" && chrome.runtime?.getURL
@@ -159,6 +174,7 @@ export function Popup(): React.ReactElement {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [jd, setJd] = useState<ExtractedJD | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [notOnJobMessage, setNotOnJobMessage] = useState<string | null>(null);
   const [flintFallback, setFlintFallback] = useState(false);
   const [savedJdId, setSavedJdId] = useState<string | null>(null);
   const [savedExportToken, setSavedExportToken] = useState<string | null>(null);
@@ -182,13 +198,20 @@ export function Popup(): React.ReactElement {
 
   async function _extractJD(): Promise<void> {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab?.id || !tab.url || !tab.url.startsWith("http")) {
+    if (!tab?.id) {
+      setNotOnJobMessage(null);
       setView("not_on_job");
       return;
     }
 
-    // Popup fetch is most reliable on SPAs (Jobright): runs in extension context,
-    // no service-worker wake race. SW + content script are fallbacks.
+    if (isRestrictedUrl(tab.url) || !tab.url?.startsWith("http")) {
+      setNotOnJobMessage(
+        "Cannot access this page. Open a LinkedIn, Greenhouse, Jobright, or other job listing.",
+      );
+      setView("not_on_job");
+      return;
+    }
+
     const [directParsed, swParsed, pageJd] = await Promise.all([
       _parseJdFromUrlDirect(tab.url),
       _parseJdFromUrlViaServiceWorker(tab.url),
@@ -235,8 +258,10 @@ export function Popup(): React.ReactElement {
         url: tab.url,
         extraction_method: structuredParsed ? "structured" : (pageJd?.extraction_method ?? "heuristic"),
       });
+      setNotOnJobMessage(null);
       setView("job_ready");
     } else {
+      setNotOnJobMessage(null);
       setView("not_on_job");
     }
   }
@@ -321,15 +346,15 @@ export function Popup(): React.ReactElement {
   }
 
   function handlePrepInFlintDesktop(): void {
+    // Closure correctness: this handler captures savedExportToken from the
+    // current render. The desktop button only renders when view === "saved",
+    // which only happens after handleSaveJD has called setSavedExportToken.
     if (!savedExportToken) return;
 
     const url = `flint://import?token=${savedExportToken}`;
     // Run in the service worker so tab cleanup survives popup close.
     void chrome.runtime.sendMessage({ type: "OPEN_FLINT_DEEP_LINK", url });
 
-    // Popups close immediately on navigation so window blur never fires.
-    // Use a plain timeout: if Flint is installed it handles the deep link
-    // within the OS; we show a fallback hint after the window stays open.
     if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
     setFlintFallback(false);
     fallbackTimerRef.current = setTimeout(() => {
@@ -415,7 +440,8 @@ export function Popup(): React.ReactElement {
           </button>
         </header>
         <p className="hint">
-          Open a job posting page (LinkedIn, Greenhouse, Jobright, etc.) and try again.
+          {notOnJobMessage ??
+            "Open a job posting page (LinkedIn, Greenhouse, Jobright, etc.) and try again."}
         </p>
       </div>
     );

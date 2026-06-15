@@ -99,6 +99,17 @@ describe("refreshIfNeeded()", () => {
     const token = await storage.getAccessToken();
     expect(token).toBeNull();
   });
+
+  it("does not propagate when clearAuth itself fails after a refresh error", async () => {
+    // Regression: a chrome.storage.local.remove failure inside _doRefresh
+    // must not surface as an unhandled rejection back to the alarm handler.
+    await storage.saveAuth("old_access", "old_refresh", -1, MOCK_USER);
+
+    vi.spyOn(api, "apiRefresh").mockRejectedValue(new Error("network"));
+    vi.spyOn(storage, "clearAuth").mockRejectedValue(new Error("storage gone"));
+
+    await expect(refreshIfNeeded()).resolves.toBeUndefined();
+  });
 });
 
 describe("ensureRefreshAlarmRegistered()", () => {

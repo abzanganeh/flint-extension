@@ -8,6 +8,10 @@ import { getApiBaseUrl } from "./urls.js";
 
 const API_BASE = getApiBaseUrl();
 
+// Contract: a 401 response anywhere in the API layer clears stored auth and
+// throws AuthError. Callers MUST NOT call clearAuth themselves on a 401 —
+// clearAuth is idempotent so a duplicate call is harmless, but relying on
+// this contract keeps refresh / login / save paths uniform.
 async function request<T>(
   path: string,
   options: RequestInit,

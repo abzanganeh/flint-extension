@@ -6,6 +6,7 @@ import {
 import selectorsConfig from "./jd-selectors.json";
 
 const HEURISTIC_MIN_LENGTH = 200;
+const EXTRACTION_TIMEOUT_MS = 5000;
 
 const GENERIC_DESCRIPTION_SELECTORS = [
   ".job-description",
@@ -247,7 +248,25 @@ function extractScoredHeuristic(): string {
   return best;
 }
 
-async function extractJD(): Promise<ExtractedJD> {
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`Extraction timed out after ${ms}ms`));
+    }, ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err: unknown) => {
+        clearTimeout(timer);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      },
+    );
+  });
+}
+
+async function _extractJDInner(): Promise<ExtractedJD> {
   const config: SelectorsConfig = selectorsConfig;
 
   // --- Layer 1: JSON-LD JobPosting (live DOM → SW fetch → regex) ---
@@ -316,6 +335,10 @@ async function extractJD(): Promise<ExtractedJD> {
     url: window.location.href,
     extraction_method: "heuristic",
   };
+}
+
+function extractJD(): Promise<ExtractedJD> {
+  return withTimeout(_extractJDInner(), EXTRACTION_TIMEOUT_MS);
 }
 
 chrome.runtime.onMessage.addListener(
