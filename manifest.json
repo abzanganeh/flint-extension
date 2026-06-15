@@ -12,9 +12,11 @@
   ],
   "host_permissions": [
     "http://localhost:8000/*",
-    "https://www.linkedin.com/jobs/*",
-    "https://linkedin.com/jobs/*",
-    "https://*.greenhouse.io/*"
+    "http://localhost:3000/*",
+    "https://www.linkedin.com/*",
+    "https://linkedin.com/*",
+    "https://*.greenhouse.io/*",
+    "https://*/*"
   ],
   "background": {
     "service_worker": "background/service-worker.js",
@@ -41,7 +43,9 @@
       "matches": [
         "https://www.linkedin.com/jobs/*",
         "https://linkedin.com/jobs/*",
-        "https://*.greenhouse.io/*"
+        "https://*.greenhouse.io/*",
+        "https://jobright.ai/jobs/*",
+        "https://www.jobright.ai/jobs/*"
       ],
       "js": ["content/jd-extractor.js"],
       "run_at": "document_idle"

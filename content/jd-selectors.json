@@ -34,5 +34,123 @@
       ".job-post-content",
       ".job_description"
     ]
+  },
+  "lever": {
+    "matches": ["jobs.lever.co", "lever.co/"],
+    "title": [
+      ".posting-headline h2",
+      "h2.posting-headline"
+    ],
+    "company": [
+      ".main-header-text .company-name",
+      "h1.posting-name"
+    ],
+    "description": [
+      ".posting-description",
+      ".section-wrapper"
+    ]
+  },
+  "ashby": {
+    "matches": ["jobs.ashbyhq.com"],
+    "title": [
+      "h1.ashby-job-posting-heading",
+      "h1"
+    ],
+    "company": [
+      ".ashby-job-posting-company-name",
+      "title"
+    ],
+    "description": [
+      ".ashby-job-posting-brief-description",
+      "[class*='JobPosting_description']"
+    ]
+  },
+  "workday": {
+    "matches": ["myworkdayjobs.com", "wd1.myworkday.com", "wd3.myworkday.com", "wd5.myworkday.com"],
+    "title": [
+      "[data-automation-id='jobPostingHeader'] h2",
+      "h2.css-1o1z5s4"
+    ],
+    "company": [
+      "[data-automation-id='company']",
+      "title"
+    ],
+    "description": [
+      "[data-automation-id='jobPostingDescription']",
+      "[data-automation-id='job-posting-description']"
+    ]
+  },
+  "icims": {
+    "matches": ["icims.com"],
+    "title": [
+      "#iCIMS_JobDetail h1",
+      ".iCIMS_JobTitle h1",
+      "h1.iCIMS-Title"
+    ],
+    "company": [
+      ".iCIMS_CompanyHeader",
+      "title"
+    ],
+    "description": [
+      "#iCIMS_JobDetail",
+      ".iCIMS_JobDescription",
+      "[id$='job-description']"
+    ]
+  },
+  "smartrecruiters": {
+    "matches": ["jobs.smartrecruiters.com"],
+    "title": [
+      "h1.job-title",
+      "h1[class*='jobTitle']"
+    ],
+    "company": [
+      ".company-name",
+      "[class*='companyName']"
+    ],
+    "description": [
+      ".job-description",
+      "[class*='jobDescription']"
+    ]
+  },
+  "jobright": {
+    "matches": ["jobright.ai/jobs"],
+    "title": [
+      ".index_job-title__Ok618",
+      "h1[class*='job-title']",
+      "h1"
+    ],
+    "company": [
+      ".index_jobDetailHeaderContent__lEUKj",
+      "[class*='jobDetailHeader']"
+    ],
+    "description": [
+      ".index_jobDetailContent__rhs3U",
+      ".index_jobMainContentInfo__ZxJfE",
+      "[class*='jobDetailContent']",
+      "[class*='jobMainContentInfo']",
+      "[class*='jobContentBrief']"
+    ]
+  },
+  "icims_careers": {
+    "matches": [
+      "kaiserpermanentejobs.org",
+      "icims.com",
+      "careers."
+    ],
+    "title": [
+      "h1",
+      ".iCIMS_JobTitle h1",
+      "[class*='job-title']"
+    ],
+    "company": [
+      ".iCIMS_CompanyHeader",
+      "title"
+    ],
+    "description": [
+      ".job-description",
+      ".ats-description",
+      "#job .job-description",
+      ".iCIMS_JobDescription"
+    ]
   }
 }

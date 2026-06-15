@@ -1,0 +1,303 @@
+/** Shared JD parsing helpers (service worker + content script). */
+
+export const JD_MIN_LENGTH = 200;
+export const JD_MAX_CHARS = 10_000;
+
+const JD_KEYWORDS = [
+  "responsibilities", "requirements", "qualifications", "experience",
+  "skills", "you will", "we are looking", "job summary", "bachelor",
+  "minimum", "proficiency", "collaborate", "develop", "design", "build",
+];
+
+const AGGREGATOR_END_MARKERS = [
+  /\bHidden Jobs\b/i,
+  /\bCustomize Your Resume\b/i,
+  /\bBoost Your Interview\b/i,
+  /\bAI ToolsCustomize\b/i,
+  /\bCompany data provided by crunchbase\b/i,
+];
+
+const AGGREGATOR_START_MARKERS = [
+  /\bOriginal Job Post\b/i,
+  /\bOverviewCompany\b/i,
+  /\b[A-Z][\w&™.,'()-]+ is (?:a|an|the) \b/i,
+  /\bResponsibilities\b/i,
+  /\bQualification\b/i,
+];
+
+export interface ParsedJD {
+  title: string;
+  company: string;
+  text: string;
+}
+
+export function sanitizeText(raw: string): string {
+  return raw
+    .replace(/\r\n/g, "\n")
+    .replace(/[ \t]+/g, " ")
+    .replace(/ *\n */g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function stripHtml(html: string): string {
+  if (typeof DOMParser === "undefined") {
+    return html.replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  }
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const text = htmlNodeToPlainText(doc.body);
+  return text.replace(/\n{3,}/g, "\n\n").replace(/[ \t]+\n/g, "\n").trim();
+}
+
+function htmlNodeToPlainText(node: Node): string {
+  if (node.nodeType === Node.TEXT_NODE) {
+    return (node.textContent ?? "").replace(/\s+/g, " ");
+  }
+  if (node.nodeType !== Node.ELEMENT_NODE) return "";
+
+  const el = node as Element;
+  const tag = el.tagName.toLowerCase();
+
+  if (tag === "br") return "\n";
+
+  const inner = Array.from(el.childNodes).map(htmlNodeToPlainText).join("").trim();
+
+  if (tag === "li") return inner ? `\n- ${inner}` : "";
+  if (tag === "p" || tag === "div") return inner ? `\n\n${inner}` : "";
+  if (/^h[1-6]$/.test(tag)) return inner ? `\n\n${inner}\n\n` : "";
+  if (tag === "ul" || tag === "ol") return inner ? `\n${inner}\n` : "";
+
+  return inner;
+}
+
+/** Remove Jobright / aggregator boilerplate from JSON-LD descriptions. */
+function polishStructuredJdText(text: string): string {
+  return text
+    .replace(/^Note:\s*The job is a remote job[^.\n]*\.\s*/i, "")
+    .replace(/^Note:\s*[^.\n]+\.\s*/i, "")
+    .replace(/^\s*Skills\s*$/gim, "Required Qualifications")
+    .replace(/^\s*Skills:\s*$/gim, "Required Qualifications:")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/\bCompany Overview\b/i, "Company")
+    .trim();
+}
+
+function normalizeJobTitle(title: string): string {
+  return sanitizeText(title.replace(/^\[[^\]]+\]\s*/, ""));
+}
+
+export function formatJdSections(text: string): string {
+  return text
+    .replace(
+      /\s*(Job Summary:|Responsibilities and Accountabilities:|Essential Responsibilities:|Minimum Qualifications:|Preferred Qualifications:|Required Qualifications:|Qualifications:|Qualification:|Required:|Benefits:|Company Overview:|Company:|Skills:|Responsibilities:)/gi,
+      "\n\n$1",
+    )
+    .replace(/(\n|^)(Responsibilities|Qualification|Qualifications|Benefits|Skills|Required)(\n|$)/gi, "\n\n$2:\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/** Job boards (Jobright, etc.) embed nav chrome and a sidebar job feed in the DOM. */
+export function isJobAggregatorNoise(text: string): boolean {
+  if (/Apply with Autofill/i.test(text) && /GOOD MATCH/i.test(text)) return true;
+  if (/ASK ORION/i.test(text)) return true;
+  if (/Upgrade to Turbo/i.test(text)) return true;
+  if (/Hidden Jobs/i.test(text)) return true;
+  if (/JobsResumeProfile|JobsProfileAgent/i.test(text)) return true;
+  if (/Insider Connection @/i.test(text)) return true;
+  if ((text.match(/Why this job is a match/gi) ?? []).length >= 2) return true;
+  if ((text.match(/GOOD MATCH|STRONG MATCH/gi) ?? []).length >= 2) return true;
+  if (/Find More Connections/i.test(text) && /Recommended/i.test(text)) return true;
+  return false;
+}
+
+/** Trim job-board nav chrome and sidebar recommendation feed from extracted text. */
+export function stripJobAggregatorNoise(text: string): string {
+  let cleaned = sanitizeText(text);
+  if (!isJobAggregatorNoise(cleaned)) return cleaned;
+
+  for (const marker of AGGREGATOR_END_MARKERS) {
+    const idx = cleaned.search(marker);
+    if (idx > 200) {
+      cleaned = cleaned.slice(0, idx).trim();
+      break;
+    }
+  }
+
+  const feedIdx = cleaned.search(/\bRecommended\b.{0,120}\bWhy this job is a match\b/i);
+  if (feedIdx > 1000) cleaned = cleaned.slice(0, feedIdx).trim();
+
+  for (const marker of AGGREGATOR_START_MARKERS) {
+    const match = marker.exec(cleaned);
+    if (match && match.index > 0 && match.index < cleaned.length * 0.45) {
+      cleaned = cleaned.slice(match.index).trim();
+      break;
+    }
+  }
+
+  return formatJdSections(cleaned);
+}
+
+/** Cap JD length for Smart Resume (10k). Prefer cutting before trailing sections. */
+export function truncateJdText(text: string, max = JD_MAX_CHARS): string {
+  if (text.length <= max) return text;
+  const tailSections = [
+    "Recent News",
+    "Leadership Team",
+    "Funding",
+    "Company",
+    "Benefits",
+  ];
+  for (const section of tailSections) {
+    const re = new RegExp(`\\b${section}\\b`, "i");
+    const window = text.slice(Math.floor(max * 0.65), max + 800);
+    const match = re.exec(window);
+    if (match) {
+      const idx = Math.floor(max * 0.65) + match.index;
+      if (idx >= max * 0.7 && idx <= max + 200) return text.slice(0, idx).trim();
+    }
+  }
+  return text.slice(0, max).trim();
+}
+
+export function finalizeJdText(text: string): string {
+  return truncateJdText(polishStructuredJdText(stripJobAggregatorNoise(cleanJdText(text))));
+}
+
+export function cleanJdText(text: string): string {
+  let cleaned = sanitizeText(text);
+  const noisy =
+    isMetadataHeavy(cleaned) ||
+    cleaned.includes("Skip to main content") ||
+    (cleaned.match(/custom_fields\./g) ?? []).length >= 1;
+
+  const bodyMarkers = [
+    /Job Summary:/i,
+    /Job Description:/i,
+    /Position Summary:/i,
+    /About the Role:/i,
+    /Responsibilities and Accountabilities:/i,
+    /Responsibilities:/i,
+  ];
+
+  let earliestMarker = -1;
+  for (const marker of bodyMarkers) {
+    const match = marker.exec(cleaned);
+    if (match && (earliestMarker < 0 || match.index < earliestMarker)) {
+      earliestMarker = match.index;
+    }
+  }
+
+  if (earliestMarker > 0 && (noisy || earliestMarker < cleaned.length * 0.6)) {
+    cleaned = cleaned.slice(earliestMarker).trim();
+  }
+
+  if ((cleaned.match(/custom_fields\./g) ?? []).length >= 3) {
+    const summaryIdx = cleaned.search(/Job Summary:/i);
+    if (summaryIdx >= 0) cleaned = cleaned.slice(summaryIdx).trim();
+    else return "";
+  }
+
+  return formatJdSections(cleaned);
+}
+
+export function isMetadataHeavy(text: string): boolean {
+  if (isJobAggregatorNoise(text)) return true;
+  if ((text.match(/custom_fields\./g) ?? []).length >= 3) return true;
+  if (text.includes("Skip to main content") && text.includes("Talent Network")) return true;
+  if (text.includes("Search by Keyword") && text.includes("Search by Location")) return true;
+  const words = text.split(/\s+/);
+  if (words.length === 0) return false;
+  return words.filter((w) => w.includes("-")).length / words.length > 0.35;
+}
+
+function isJobPostingType(entry: Record<string, unknown>): boolean {
+  const type = entry["@type"];
+  if (type === "JobPosting") return true;
+  if (Array.isArray(type) && type.includes("JobPosting")) return true;
+  return false;
+}
+
+function parseJsonLdJobPosting(rawJson: string): ParsedJD | null {
+  try {
+    const data = JSON.parse(rawJson) as Record<string, unknown>;
+    const entries: unknown[] = Array.isArray(data["@graph"]) ? data["@graph"] : [data];
+    for (const entry of entries) {
+      if (typeof entry !== "object" || entry === null) continue;
+      const job = entry as Record<string, unknown>;
+      if (!isJobPostingType(job)) continue;
+
+      const rawHtml = String(job.description ?? "");
+      const description = finalizeJdText(stripHtml(rawHtml));
+      if (description.length < JD_MIN_LENGTH) continue;
+
+      const org =
+        typeof job.hiringOrganization === "object" && job.hiringOrganization !== null
+          ? String((job.hiringOrganization as Record<string, unknown>).name ?? "")
+          : "";
+
+      return {
+        title: normalizeJobTitle(String(job.title ?? "")),
+        company: sanitizeText(org),
+        text: description,
+      };
+    }
+  } catch {
+    // malformed JSON-LD
+  }
+  return null;
+}
+
+export function extractJobPostingFromHtml(html: string): ParsedJD | null {
+  if (typeof DOMParser !== "undefined") {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const scripts = Array.from(doc.querySelectorAll('script[type="application/ld+json"]'));
+    for (const script of scripts) {
+      const parsed = parseJsonLdJobPosting(script.textContent ?? "");
+      if (parsed) return parsed;
+    }
+  }
+
+  const pattern = /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(html)) !== null) {
+    const parsed = parseJsonLdJobPosting(match[1] ?? "");
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
+export function scoreJdText(text: string): number {
+  if (!text || text.length < JD_MIN_LENGTH) return -1;
+  let score = 0;
+  if (/^Job Summary:/i.test(text)) score += 200;
+  else if (/Job Summary:/i.test(text)) score += 100;
+  if (/^Responsibilities and Accountabilities:/i.test(text) && !/Job Summary:/i.test(text)) {
+    score -= 80;
+  }
+  if (isJobAggregatorNoise(text)) score -= 600;
+  if (isMetadataHeavy(text)) score -= 500;
+  if (text.length > 8_000) score -= 150;
+  if (text.length > JD_MAX_CHARS) score -= 300;
+  const lower = text.toLowerCase();
+  score += JD_KEYWORDS.filter((kw) => lower.includes(kw)).length * 5;
+  score += Math.min(text.length / 100, 50);
+  return score;
+}
+
+export function pickBetterJd(a: ParsedJD | null, b: ParsedJD | null): ParsedJD | null {
+  if (!a) return b;
+  if (!b) return a;
+
+  const aNoise = isJobAggregatorNoise(a.text);
+  const bNoise = isJobAggregatorNoise(b.text);
+  if (aNoise && !bNoise) return { ...b, text: finalizeJdText(b.text) };
+  if (bNoise && !aNoise) return { ...a, text: finalizeJdText(a.text) };
+
+  const aText = finalizeJdText(a.text);
+  const bText = finalizeJdText(b.text);
+  const scoreA = scoreJdText(aText);
+  const scoreB = scoreJdText(bText);
+  const winner = scoreA >= scoreB ? { ...a, text: aText } : { ...b, text: bText };
+  return winner;
+}

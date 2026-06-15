@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
-import type { ExtractedJD, GoogleLoginResult } from "../src/types.js";
+import type { ExtractedJD, GoogleLoginResult, ParseJdFromUrlResult } from "../src/types.js";
 import { getAccessTokenOrNull, login, logout } from "../src/auth.js";
 import { apiSaveJD } from "../src/api.js";
 import { buildTailorInFlintResumeUrl, getGoogleClientId } from "../src/urls.js";
+import { pickBetterJd, scoreJdText, finalizeJdText, extractJobPostingFromHtml } from "../src/jdParse.js";
 
 const GOOGLE_ENABLED = Boolean(getGoogleClientId());
 
@@ -45,6 +46,101 @@ async function _sendGoogleLoginToSW(
   throw new Error("Service worker unreachable — please try again.");
 }
 
+const FETCH_HEADERS = {
+  Accept: "text/html,application/xhtml+xml",
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+};
+
+/** Fetch page HTML from the popup (extension context — no sleeping service worker). */
+async function _parseJdFromUrlDirect(
+  url: string,
+): Promise<{ title: string; company: string; text: string } | null> {
+  try {
+    const response = await fetch(url, { headers: FETCH_HEADERS });
+    if (!response.ok) return null;
+    const html = await response.text();
+    const parsed = extractJobPostingFromHtml(html);
+    if (parsed && parsed.text.trim().length >= 200) return parsed;
+  } catch {
+    // Network or parse failure — caller tries other paths.
+  }
+  return null;
+}
+
+async function _parseJdFromUrlViaServiceWorker(
+  url: string,
+  maxAttempts = 6,
+  baseDelayMs = 150,
+): Promise<{ title: string; company: string; text: string } | null> {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const result = await new Promise<ParseJdFromUrlResult>((resolve, reject) => {
+        chrome.runtime.sendMessage(
+          { type: "PARSE_JD_FROM_URL", url },
+          (res: ParseJdFromUrlResult | undefined) => {
+            if (chrome.runtime.lastError) {
+              reject(new Error(chrome.runtime.lastError.message));
+            } else if (res) {
+              resolve(res);
+            } else {
+              reject(new Error("No response from service worker"));
+            }
+          },
+        );
+      });
+      if ("jd" in result && result.jd && result.jd.text.trim().length >= 200) {
+        return result.jd;
+      }
+    } catch (err) {
+      const isConnectionError =
+        err instanceof Error &&
+        (err.message.includes("does not exist") ||
+          err.message.includes("establish connection") ||
+          err.message.includes("No response"));
+      if (isConnectionError && attempt < maxAttempts - 1) {
+        await new Promise((r) => setTimeout(r, baseDelayMs * (attempt + 1)));
+        continue;
+      }
+    }
+  }
+  return null;
+}
+
+async function _extractJdFromTab(tabId: number): Promise<ExtractedJD | null> {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["content/jd-extractor.js"],
+    });
+  } catch {
+    // Already injected, or page blocks scripting — SW JSON-LD may still work.
+  }
+
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const response = await new Promise<{ type: string; jd?: ExtractedJD; error?: string }>(
+      (resolve) => {
+        chrome.tabs.sendMessage(tabId, { type: "EXTRACT_JD" }, (msg) => {
+          if (chrome.runtime.lastError || !msg) {
+            resolve({ type: "JD_ERROR", error: chrome.runtime.lastError?.message ?? "No response" });
+          } else {
+            resolve(msg);
+          }
+        });
+      },
+    );
+
+    if (response.type === "JD_RESULT" && response.jd && response.jd.text.length >= 200) {
+      return response.jd;
+    }
+
+    if (attempt < 4) {
+      await new Promise((r) => setTimeout(r, 120 * (attempt + 1)));
+    }
+  }
+  return null;
+}
+
 type View = "loading" | "login" | "not_on_job" | "job_ready" | "saving" | "saved" | "error";
 
 const FLINT_NOT_INSTALLED_TIMEOUT_MS = 3000;
@@ -85,34 +181,53 @@ export function Popup(): React.ReactElement {
 
   async function _extractJD(): Promise<void> {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab?.id) {
+    if (!tab?.id || !tab.url || !tab.url.startsWith("http")) {
       setView("not_on_job");
       return;
     }
 
-    try {
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        files: ["content/jd-extractor.js"],
-      });
-    } catch {
-      // Content script may already be injected; ignore duplicate injection error.
-    }
+    // Popup fetch is most reliable on SPAs (Jobright): runs in extension context,
+    // no service-worker wake race. SW + content script are fallbacks.
+    const [directParsed, swParsed, pageJd] = await Promise.all([
+      _parseJdFromUrlDirect(tab.url),
+      _parseJdFromUrlViaServiceWorker(tab.url),
+      _extractJdFromTab(tab.id),
+    ]);
 
-    const response = await new Promise<{ type: string; jd?: ExtractedJD; error?: string }>(
-      (resolve) => {
-        chrome.tabs.sendMessage(tab.id!, { type: "EXTRACT_JD" }, (msg) => {
-          if (chrome.runtime.lastError || !msg) {
-            resolve({ type: "JD_ERROR", error: "No response from page" });
-          } else {
-            resolve(msg);
-          }
-        });
-      },
+    const structuredParsed = directParsed ?? swParsed;
+
+    const swAsExtracted: ExtractedJD | null = structuredParsed
+      ? {
+          title: structuredParsed.title || tab.title || "Untitled Role",
+          company: structuredParsed.company,
+          text: structuredParsed.text,
+          url: tab.url,
+          extraction_method: "structured",
+        }
+      : null;
+
+    const bestParsed = pickBetterJd(
+      swAsExtracted
+        ? { title: swAsExtracted.title, company: swAsExtracted.company, text: swAsExtracted.text }
+        : null,
+      pageJd
+        ? { title: pageJd.title, company: pageJd.company, text: pageJd.text }
+        : null,
     );
 
-    if (response.type === "JD_RESULT" && response.jd && response.jd.text.length >= 100) {
-      setJd(response.jd);
+    if (
+      bestParsed &&
+      bestParsed.text.trim().length >= 200 &&
+      (structuredParsed || scoreJdText(finalizeJdText(bestParsed.text)) >= 0)
+    ) {
+      const finalText = finalizeJdText(bestParsed.text);
+      setJd({
+        title: bestParsed.title || tab.title || "Untitled Role",
+        company: bestParsed.company,
+        text: finalText,
+        url: tab.url,
+        extraction_method: structuredParsed ? "structured" : (pageJd?.extraction_method ?? "heuristic"),
+      });
       setView("job_ready");
     } else {
       setView("not_on_job");
@@ -287,7 +402,9 @@ export function Popup(): React.ReactElement {
             Log out
           </button>
         </header>
-        <p className="hint">Navigate to a LinkedIn or Greenhouse job posting to capture it.</p>
+        <p className="hint">
+          Open a job posting page (LinkedIn, Greenhouse, Jobright, etc.) and try again.
+        </p>
       </div>
     );
   }
