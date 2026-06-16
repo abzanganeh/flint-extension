@@ -29,14 +29,17 @@ export function buildTailorInFlintResumeUrl(
   return `${base}/session/new?${params.toString()}`;
 }
 
+/** Dedicated extension callback — must not use the NextAuth route. */
+export function buildExtensionOAuthRedirectUri(): string {
+  const base = getWebAppBaseUrl().replace(/\/$/, "");
+  return `${base}/auth/extension/google/callback`;
+}
+
 /**
- * Build the Google OAuth authorization URL for use with
- * ``chrome.identity.launchWebAuthFlow``.
+ * Build the Google OAuth authorization URL opened in a sign-in tab.
  *
- * The ``redirectUri`` must match one of the URIs registered in Google Cloud
- * Console. For Chrome extensions this is the value returned by
- * ``chrome.identity.getRedirectURL()``, e.g.
- * ``https://<ext-id>.chromiumapp.org/``.
+ * The ``redirectUri`` must match a URI registered on the same Google OAuth
+ * client as the web app — see ``buildExtensionOAuthRedirectUri()``.
  */
 export function buildGoogleAuthUrl(redirectUri: string): string {
   const params = new URLSearchParams({

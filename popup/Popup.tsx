@@ -1,10 +1,18 @@
 import React, { useEffect, useRef, useState } from "react";
-import type { ExtractedJD, GoogleLoginResult, ParseJdFromUrlResult } from "../src/types.js";
+import type {
+  ExtractedJD,
+  GoogleLoginResult,
+  InjectJdExtractorResult,
+  ParseJdFromUrlResult,
+} from "../src/types.js";
+import { formatApiErrorMessage } from "../src/formatApiError.js";
 import { getAccessTokenOrNull, login, logout } from "../src/auth.js";
 import { apiSaveJD } from "../src/api.js";
 import { buildTailorInFlintResumeUrl, getGoogleClientId } from "../src/urls.js";
+import { isLinkedInJobPage, resolveLinkedInJobFetchUrl } from "../src/linkedinJobUrl.js";
 import { isUncertainJdSource } from "../src/jdCompleteness.js";
 import { pickBetterJd, scoreJdText, finalizeJdText, extractJobPostingFromHtml, truncateJdText } from "../src/jdParse.js";
+import { buildFlintImportDeepLink, dispatchFlintDeepLinkFromPopup, FLINT_DOWNLOAD_URL, openFlintDeepLinkFromPopup } from "../src/flintDeepLink.js";
 
 const GOOGLE_ENABLED = Boolean(getGoogleClientId());
 
@@ -26,8 +34,11 @@ async function _sendGoogleLoginToSW(
               reject(new Error(chrome.runtime.lastError.message));
             } else if (res) {
               resolve(res);
+            } else {
+              // Firefox: service worker returned false with no sendResponse.
+              // Treat as pending; popup waits on chrome.storage.onChanged.
+              resolve({ success: false, error: "", pending: true });
             }
-            // res undefined → popup closed mid-flow; SW still stores the token.
           },
         );
       });
@@ -53,25 +64,48 @@ const FETCH_HEADERS = {
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
 };
 
+const FETCH_TIMEOUT_MS = 4000;
+const EXTRACTION_TIMEOUT_MS = 7000;
+
+function _withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise<T>((resolve) => {
+    const timer = setTimeout(() => resolve(fallback), ms);
+    promise.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(fallback);
+      },
+    );
+  });
+}
+
 /** Fetch page HTML from the popup (extension context — no sleeping service worker). */
 async function _parseJdFromUrlDirect(
   url: string,
 ): Promise<{ title: string; company: string; text: string } | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    const response = await fetch(url, { headers: FETCH_HEADERS });
+    const response = await fetch(url, { headers: FETCH_HEADERS, signal: controller.signal });
     if (!response.ok) return null;
     const html = await response.text();
     const parsed = extractJobPostingFromHtml(html);
     if (parsed && parsed.text.trim().length >= 200) return parsed;
   } catch {
-    // Network or parse failure — caller tries other paths.
+    // Network, abort, or parse failure — caller tries other paths.
+  } finally {
+    clearTimeout(timer);
   }
   return null;
 }
 
 async function _parseJdFromUrlViaServiceWorker(
   url: string,
-  maxAttempts = 6,
+  maxAttempts = 2,
   baseDelayMs = 150,
 ): Promise<{ title: string; company: string; text: string } | null> {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -108,15 +142,22 @@ async function _parseJdFromUrlViaServiceWorker(
   return null;
 }
 
+async function _injectJdExtractor(tabId: number): Promise<void> {
+  // Firefox resolves executeScript `files` relative to the popup URL when called
+  // from the popup (…/popup/content/jd-extractor.js). Inject from the service
+  // worker so paths stay relative to the extension root.
+  await new Promise<void>((resolve) => {
+    chrome.runtime.sendMessage(
+      { type: "INJECT_JD_EXTRACTOR", tabId },
+      (_res: InjectJdExtractorResult | undefined) => {
+        resolve();
+      },
+    );
+  });
+}
+
 async function _extractJdFromTab(tabId: number): Promise<ExtractedJD | null> {
-  try {
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      files: ["content/jd-extractor.js"],
-    });
-  } catch {
-    // Already injected, or page blocks scripting — SW JSON-LD may still work.
-  }
+  await _injectJdExtractor(tabId);
 
   for (let attempt = 0; attempt < 5; attempt++) {
     const response = await new Promise<{ type: string; jd?: ExtractedJD; error?: string }>(
@@ -142,7 +183,7 @@ async function _extractJdFromTab(tabId: number): Promise<ExtractedJD | null> {
   return null;
 }
 
-type View = "loading" | "login" | "not_on_job" | "job_ready" | "saving" | "saved" | "error";
+type View = "loading" | "login" | "not_on_job" | "manual_entry" | "job_ready" | "saving" | "saved" | "error";
 
 const FLINT_NOT_INSTALLED_TIMEOUT_MS = 3000;
 const RESTRICTED_URL_PREFIXES = [
@@ -178,26 +219,67 @@ export function Popup(): React.ReactElement {
   const [flintFallback, setFlintFallback] = useState(false);
   const [savedJdId, setSavedJdId] = useState<string | null>(null);
   const [savedExportToken, setSavedExportToken] = useState<string | null>(null);
+  const [copiedImportLink, setCopiedImportLink] = useState(false);
+  const [tabUrl, setTabUrl] = useState<string | undefined>(undefined);
+  const [manualTitle, setManualTitle] = useState("");
+  const [manualCompany, setManualCompany] = useState("");
+  const [manualText, setManualText] = useState("");
+  const [manualError, setManualError] = useState<string | null>(null);
   const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const initWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [loadingStatus, setLoadingStatus] = useState<string>("Detecting job description…");
 
   useEffect(() => {
     void _init();
     return () => {
       if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
+      if (initWatchdogRef.current) clearTimeout(initWatchdogRef.current);
     };
   }, []);
 
   async function _init(): Promise<void> {
-    const token = await getAccessTokenOrNull();
-    if (!token) {
-      setView("login");
-      return;
+    // Watchdog: if anything in _init hangs (auth refresh, executeScript on a
+    // sandboxed page, etc.), force a transition out of the spinner so the
+    // user can either log in or paste manually. 12 s gives the 7 s extraction
+    // budget room plus auth refresh headroom.
+    initWatchdogRef.current = setTimeout(() => {
+      setView((prev) =>
+        prev === "loading"
+          ? "not_on_job"
+          : prev,
+      );
+      setNotOnJobMessage(
+        "Detection took too long. Paste the job description manually below.",
+      );
+    }, 12_000);
+
+    try {
+      setLoadingStatus("Checking your session…");
+      const token = await getAccessTokenOrNull();
+      if (!token) {
+        setView("login");
+        return;
+      }
+      setLoadingStatus("Reading the job posting…");
+      await _extractJD();
+    } catch (err) {
+      setNotOnJobMessage(
+        err instanceof Error
+          ? `Could not read this page (${err.message}). Paste the job description manually below.`
+          : "Could not read this page. Paste the job description manually below.",
+      );
+      setView("not_on_job");
+    } finally {
+      if (initWatchdogRef.current) {
+        clearTimeout(initWatchdogRef.current);
+        initWatchdogRef.current = null;
+      }
     }
-    await _extractJD();
   }
 
   async function _extractJD(): Promise<void> {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    setTabUrl(tab?.url);
     if (!tab?.id) {
       setNotOnJobMessage(null);
       setView("not_on_job");
@@ -212,11 +294,25 @@ export function Popup(): React.ReactElement {
       return;
     }
 
-    const [directParsed, swParsed, pageJd] = await Promise.all([
-      _parseJdFromUrlDirect(tab.url),
-      _parseJdFromUrlViaServiceWorker(tab.url),
-      _extractJdFromTab(tab.id),
-    ]);
+    const fetchUrl = tab.url ? resolveLinkedInJobFetchUrl(tab.url) : tab.url;
+    // LinkedIn is a fully client-rendered SPA — unauthenticated HTML fetches
+    // never contain JSON-LD and take 1-3s for nothing. Skip them and rely
+    // entirely on the content script which has the live authenticated DOM.
+    const skipHtmlFetch = tab.url ? isLinkedInJobPage(tab.url) : false;
+
+    const [directParsed, swParsed, pageJd] = await _withTimeout(
+      Promise.all([
+        !skipHtmlFetch && fetchUrl ? _parseJdFromUrlDirect(fetchUrl) : Promise.resolve(null),
+        !skipHtmlFetch && fetchUrl ? _parseJdFromUrlViaServiceWorker(fetchUrl) : Promise.resolve(null),
+        _extractJdFromTab(tab.id),
+      ]),
+      EXTRACTION_TIMEOUT_MS,
+      [null, null, null] as [
+        { title: string; company: string; text: string } | null,
+        { title: string; company: string; text: string } | null,
+        ExtractedJD | null,
+      ],
+    );
 
     const structuredParsed = directParsed ?? swParsed;
 
@@ -261,31 +357,92 @@ export function Popup(): React.ReactElement {
       setNotOnJobMessage(null);
       setView("job_ready");
     } else {
-      setNotOnJobMessage(null);
+      setNotOnJobMessage(
+        tab.url && isLinkedInJobPage(tab.url)
+          ? "Could not read this LinkedIn job yet. Select a job in the list, wait for the description to load, then reopen the extension."
+          : null,
+      );
       setView("not_on_job");
     }
+  }
+
+  function handleOpenManualEntry(): void {
+    setManualTitle("");
+    setManualCompany("");
+    setManualText("");
+    setManualError(null);
+    setView("manual_entry");
+  }
+
+  function handleManualSubmit(): void {
+    if (manualText.trim().length < 200) {
+      setManualError("Paste at least 200 characters of job description text.");
+      return;
+    }
+    setManualError(null);
+    setJd({
+      title: manualTitle.trim() || "Untitled Role",
+      company: manualCompany.trim(),
+      text: manualText.trim(),
+      url: tabUrl ?? "",
+      extraction_method: "heuristic",
+    });
+    setView("job_ready");
   }
 
   async function handleGoogleLogin(): Promise<void> {
     setGoogleLoading(true);
     setLoginError(null);
+    let firefoxPending = false;
 
-    // Delegate to the service worker. The popup closes the moment the user
-    // focuses the Google account picker, so any async work here would be
-    // abandoned. The SW survives popup close and stores the token; if the
-    // popup is still open when the flow finishes, the SW sends back a result.
+    const onStorageChanged = (
+      changes: Record<string, chrome.storage.StorageChange>,
+      area: string,
+    ): void => {
+      if (area !== "local") return;
+
+      // Firefox success path: service worker saved auth to storage.
+      if (changes.sr_access_token?.newValue) {
+        chrome.storage.onChanged.removeListener(onStorageChanged);
+        setGoogleLoading(false);
+        setView("loading");
+        void _extractJD();
+        return;
+      }
+
+      // Firefox error path: service worker wrote an error key.
+      if (changes.sr_oauth_error?.newValue) {
+        chrome.storage.onChanged.removeListener(onStorageChanged);
+        const msg = changes.sr_oauth_error.newValue as string;
+        void chrome.storage.local.remove("sr_oauth_error");
+        setLoginError(msg);
+        setGoogleLoading(false);
+      }
+    };
+    chrome.storage.onChanged.addListener(onStorageChanged);
+
     try {
       const result = await _sendGoogleLoginToSW();
+
+      if (!result.success && result.pending) {
+        // Firefox: OAuth running in background; storage listener handles completion.
+        firefoxPending = true;
+        return;
+      }
+
+      // Chrome: synchronous result from launchWebAuthFlow.
+      chrome.storage.onChanged.removeListener(onStorageChanged);
       if (result.success) {
         setView("loading");
         await _extractJD();
       } else {
-        setLoginError(result.error);
+        setLoginError(formatApiErrorMessage(result.error, result.error));
       }
     } catch (err) {
+      chrome.storage.onChanged.removeListener(onStorageChanged);
       setLoginError(err instanceof Error ? err.message : "Google sign-in failed");
     } finally {
-      setGoogleLoading(false);
+      if (!firefoxPending) setGoogleLoading(false);
     }
   }
 
@@ -346,14 +503,12 @@ export function Popup(): React.ReactElement {
   }
 
   function handlePrepInFlintDesktop(): void {
-    // Closure correctness: this handler captures savedExportToken from the
-    // current render. The desktop button only renders when view === "saved",
-    // which only happens after handleSaveJD has called setSavedExportToken.
     if (!savedExportToken) return;
 
-    const url = `flint://import?token=${savedExportToken}`;
-    // Run in the service worker so tab cleanup survives popup close.
-    void chrome.runtime.sendMessage({ type: "OPEN_FLINT_DEEP_LINK", url });
+    setCopiedImportLink(false);
+    // Keep both paths: direct dispatch (user gesture) + handoff tab (Chrome/Firefox/Linux).
+    dispatchFlintDeepLinkFromPopup(savedExportToken);
+    void openFlintDeepLinkFromPopup(savedExportToken);
 
     if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
     setFlintFallback(false);
@@ -362,10 +517,21 @@ export function Popup(): React.ReactElement {
     }, FLINT_NOT_INSTALLED_TIMEOUT_MS);
   }
 
+  async function handleCopyImportLink(): Promise<void> {
+    if (!savedExportToken) return;
+    try {
+      await navigator.clipboard.writeText(buildFlintImportDeepLink(savedExportToken));
+      setCopiedImportLink(true);
+    } catch {
+      setCopiedImportLink(false);
+    }
+  }
+
   if (view === "loading") {
     return (
       <div className="popup">
         <div className="spinner" aria-label="Loading" />
+        <p className="hint hint-compact">{loadingStatus}</p>
       </div>
     );
   }
@@ -393,7 +559,7 @@ export function Popup(): React.ReactElement {
                 <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/>
                 <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
               </svg>
-              {googleLoading ? "Complete sign-in, then reopen…" : "Continue with Google"}
+              {googleLoading ? "Signing in with Google…" : "Continue with Google"}
             </button>
             <div className="login-divider"><span>or</span></div>
           </>
@@ -441,8 +607,67 @@ export function Popup(): React.ReactElement {
         </header>
         <p className="hint">
           {notOnJobMessage ??
-            "Open a job posting page (LinkedIn, Greenhouse, Jobright, etc.) and try again."}
+            "Could not detect a job on this page. Open a LinkedIn, Greenhouse, or Jobright listing — or paste the job description manually."}
         </p>
+        <button className="btn-secondary" onClick={handleOpenManualEntry}>
+          Paste job description
+        </button>
+      </div>
+    );
+  }
+
+  if (view === "manual_entry") {
+    return (
+      <div className="popup">
+        <header className="popup-header">
+          <div className="popup-brand">
+            <img src={ICON_URL} alt="" className="popup-icon" width={24} height={24} />
+            <span className="logo">Flint Resume</span>
+          </div>
+          <button className="btn-ghost" onClick={() => setView("not_on_job")}>
+            Back
+          </button>
+        </header>
+        <div className="manual-form">
+          <label>
+            Job title (optional)
+            <input
+              type="text"
+              value={manualTitle}
+              onChange={(e) => setManualTitle(e.target.value)}
+              placeholder="e.g. Senior Software Engineer"
+            />
+          </label>
+          <label>
+            Company (optional)
+            <input
+              type="text"
+              value={manualCompany}
+              onChange={(e) => setManualCompany(e.target.value)}
+              placeholder="e.g. Biamp"
+            />
+          </label>
+          <label>
+            Job description *
+            <textarea
+              value={manualText}
+              onChange={(e) => setManualText(e.target.value)}
+              placeholder="Paste the full job description here…"
+              rows={6}
+            />
+            <span className={`char-count${manualText.trim().length < 200 && manualText.length > 0 ? " warn" : ""}`}>
+              {manualText.trim().length} / 200 min chars
+            </span>
+          </label>
+          {manualError && <p className="error-text">{manualError}</p>}
+        </div>
+        <button
+          className="btn-primary"
+          onClick={handleManualSubmit}
+          disabled={manualText.trim().length < 200}
+        >
+          Use this job description
+        </button>
       </div>
     );
   }
@@ -503,18 +728,25 @@ export function Popup(): React.ReactElement {
         >
           Prep in Flint (desktop)
         </button>
+        <button
+          type="button"
+          className="btn-ghost"
+          onClick={() => void handleCopyImportLink()}
+        >
+          {copiedImportLink ? "Import link copied" : "Copy import link"}
+        </button>
         <p className="hint hint-compact">
           Tailor your resume on the web first. Use desktop for interview prep only.
+          On Linux dev builds, run <code>npm run deeplink:register</code> in Flint once.
         </p>
         {flintFallback && (
           <p className="fallback-hint">
-            Flint does not appear to be installed.{" "}
-            <a
-              href="https://flint.app/download"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Download Flint
+            Flint did not open. Register the handler (
+            <code>cd Flint && npm run deeplink:register</code>
+            ), ensure Flint or <code>npm run tauri dev</code> is running, or paste the
+            copied import link into Flint Session Design.{" "}
+            <a href={FLINT_DOWNLOAD_URL} target="_blank" rel="noreferrer">
+              Flint on GitHub
             </a>
           </p>
         )}

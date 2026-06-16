@@ -42,7 +42,8 @@ export interface ExtensionLoginResponse {
 
 export type GoogleLoginResult =
   | { success: true; user: UserInfo }
-  | { success: false; error: string };
+  | { success: false; error: string; pending?: false }
+  | { success: false; error: ""; pending: true };
 
 export type PopupMessage =
   | { type: "EXTRACT_JD" }
@@ -52,7 +53,10 @@ export type PopupMessage =
   | { type: "GOOGLE_LOGIN_RESULT"; result: GoogleLoginResult }
   | { type: "FETCH_PAGE_HTML"; url: string }
   | { type: "PARSE_JD_FROM_URL"; url: string }
-  | { type: "OPEN_FLINT_DEEP_LINK"; url: string };
+  | { type: "OPEN_FLINT_DEEP_LINK"; url: string }
+  | { type: "INJECT_JD_EXTRACTOR"; tabId: number };
+
+export type InjectJdExtractorResult = { ok: true } | { ok: false; error: string };
 
 export type FetchPageHtmlResult =
   | { html: string }

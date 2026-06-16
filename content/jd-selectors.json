@@ -1,20 +1,31 @@
 {
   "linkedin": {
-    "matches": ["linkedin.com/jobs"],
+    "matches": ["/jobs/"],
     "title": [
       ".job-details-jobs-unified-top-card__job-title h1",
+      ".jobs-unified-top-card__job-title h1",
       ".jobs-unified-top-card__job-title",
-      "h1.t-24"
+      ".job-details-jobs-unified-top-card__job-title",
+      ".jobs-search__job-details--wrapper .job-details-jobs-unified-top-card__job-title",
+      "h1.t-24",
+      "h1[data-test-job-title]"
     ],
     "company": [
       ".job-details-jobs-unified-top-card__company-name a",
+      ".jobs-unified-top-card__company-name a",
       ".jobs-unified-top-card__company-name",
+      ".job-details-jobs-unified-top-card__company-name",
       ".topcard__org-name-link"
     ],
     "description": [
       ".jobs-description__content .jobs-box__html-content",
       "#job-details",
-      ".jobs-description-content__text"
+      ".jobs-description-content__text",
+      ".jobs-description__container",
+      ".jobs-box__html-content",
+      ".jobs-details__main-content .jobs-description",
+      "[data-test-job-description]",
+      ".jobs-search__job-details--wrapper .jobs-description"
     ]
   },
   "greenhouse": {

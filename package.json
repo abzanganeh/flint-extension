@@ -4,12 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "vite build",
-    "dev": "vite build --watch",
+    "build": "vite build && vite build --config vite.content.config.ts",
+    "dev": "vite build --watch & vite build --config vite.content.config.ts --watch",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint . --ext .ts,.tsx",
-    "lint:ext": "web-ext lint --source-dir=dist --ignore-files=\"assets/popup*.js\" \"chunks/*.js\""
+    "lint:ext": "web-ext lint --source-dir=dist --ignore-files=\"assets/popup*.js\" \"chunks/*.js\"",
+    "firefox:dev": "npm run build && node scripts/patch-firefox-manifest.mjs && node scripts/firefox-dev.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",

@@ -16,6 +16,7 @@ export default defineConfig(({ mode }) => {
           { src: "manifest.json", dest: "." },
           { src: "content/jd-selectors.json", dest: "content" },
           { src: "icons/*", dest: "icons" },
+          { src: "handoff/index.html", dest: "handoff" },
           { src: "popup/popup.css", dest: "popup" },
         ],
       }),
@@ -27,7 +28,9 @@ export default defineConfig(({ mode }) => {
         input: {
           popup: resolve(__dirname, "popup/index.html"),
           "service-worker": resolve(__dirname, "background/service-worker.ts"),
-          "jd-extractor": resolve(__dirname, "content/jd-extractor.ts"),
+          // jd-extractor is built separately via vite.content.config.ts as an
+          // IIFE so it can be injected by chrome.scripting.executeScript without
+          // ES module import failures.
         },
         output: {
           entryFileNames: (chunk) => {

@@ -1,6 +1,8 @@
 import type { UserInfo } from "./types.js";
-import { apiGoogleCallback, apiLogin, apiRefresh } from "./api.js";
-import { buildGoogleAuthUrl } from "./urls.js";
+import { ApiError, apiGoogleCallback, apiLogin, apiRefresh } from "./api.js";
+import { formatApiErrorMessage } from "./formatApiError.js";
+import { waitForOAuthCodeInTab } from "./oauthTab.js";
+import { buildExtensionOAuthRedirectUri, buildGoogleAuthUrl } from "./urls.js";
 import {
   clearAuth,
   getAccessToken,
@@ -23,29 +25,50 @@ export async function login(email: string, password: string): Promise<UserInfo> 
 }
 
 export async function loginWithGoogle(): Promise<UserInfo> {
-  const redirectUri = chrome.identity.getRedirectURL();
-  const authUrl = buildGoogleAuthUrl(redirectUri);
+  // Both Chrome and Firefox expose chrome.identity.launchWebAuthFlow, but each
+  // browser issues its own redirect URI (Chrome: <id>.chromiumapp.org,
+  // Firefox: <uuid>.extensions.allizom.org). The Firefox URI changes per
+  // temporary add-on and is impractical to whitelist in Google Cloud Console,
+  // so on Firefox we always fall back to the tab-based flow that uses the
+  // stable web-app callback. Detect Firefox by its extension URL scheme.
+  const isFirefox = chrome.runtime.getURL("/").startsWith("moz-extension://");
+  const useChromeIdentity =
+    !isFirefox && typeof chrome.identity?.launchWebAuthFlow === "function";
 
-  const responseUrl = await new Promise<string>((resolve, reject) => {
-    chrome.identity.launchWebAuthFlow(
-      { url: authUrl, interactive: true },
-      (url) => {
+  let code: string;
+  let redirectUri: string;
+
+  if (useChromeIdentity) {
+    redirectUri = chrome.identity.getRedirectURL();
+    const authUrl = buildGoogleAuthUrl(redirectUri);
+    const responseUrl = await new Promise<string>((resolve, reject) => {
+      chrome.identity.launchWebAuthFlow({ url: authUrl, interactive: true }, (url) => {
         if (chrome.runtime.lastError ?? !url) {
           reject(new Error(chrome.runtime.lastError?.message ?? "OAuth cancelled"));
         } else {
           resolve(url);
         }
-      },
-    );
-  });
-
-  const url = new URL(responseUrl);
-  const code = url.searchParams.get("code");
-  if (!code) {
-    throw new Error("No authorization code returned from Google");
+      });
+    });
+    const parsed = new URL(responseUrl);
+    const extracted = parsed.searchParams.get("code");
+    if (!extracted) throw new Error("No authorization code returned from Google");
+    code = extracted;
+  } else {
+    redirectUri = buildExtensionOAuthRedirectUri();
+    const authUrl = buildGoogleAuthUrl(redirectUri);
+    code = await waitForOAuthCodeInTab(authUrl, redirectUri);
   }
 
-  const data = await apiGoogleCallback(code, redirectUri);
+  let data;
+  try {
+    data = await apiGoogleCallback(code, redirectUri);
+  } catch (err) {
+    if (err instanceof ApiError) {
+      throw new Error(formatApiErrorMessage(err.message, err.message));
+    }
+    throw err;
+  }
   await saveAuth(data.access_token, data.refresh_token, data.expires_in, data.user);
   await _registerRefreshAlarm();
   return data.user;

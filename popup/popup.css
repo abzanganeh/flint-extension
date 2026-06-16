@@ -242,3 +242,50 @@ body {
     transform: rotate(360deg);
   }
 }
+
+.manual-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.manual-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #6b7280;
+}
+
+.manual-form input,
+.manual-form textarea {
+  padding: 8px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.manual-form input:focus,
+.manual-form textarea:focus {
+  border-color: #4f46e5;
+}
+
+.manual-form textarea {
+  resize: vertical;
+  min-height: 96px;
+}
+
+.char-count {
+  font-size: 11px;
+  color: #9ca3af;
+  text-align: right;
+  margin-top: 2px;
+}
+
+.char-count.warn {
+  color: #dc2626;
+}
