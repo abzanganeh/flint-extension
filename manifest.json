@@ -9,7 +9,8 @@
     "scripting",
     "alarms",
     "identity",
-    "tabs"
+    "tabs",
+    "webNavigation"
   ],
   "host_permissions": [
     "http://localhost:8000/*",
@@ -43,7 +44,11 @@
     {
       "matches": [
         "https://www.linkedin.com/jobs/*",
+        "https://www.linkedin.com/jobs/*/*",
+        "https://www.linkedin.com/jobs/*/*/*",
         "https://linkedin.com/jobs/*",
+        "https://linkedin.com/jobs/*/*",
+        "https://linkedin.com/jobs/*/*/*",
         "https://*.greenhouse.io/*",
         "https://jobright.ai/jobs/*",
         "https://www.jobright.ai/jobs/*"
@@ -57,17 +62,5 @@
       "id": "flint@flint.app",
       "strict_min_version": "128.0"
     }
-  },
-  "web_accessible_resources": [
-    {
-      "resources": ["content/jd-selectors.json"],
-      "matches": [
-        "https://www.linkedin.com/jobs/*",
-        "https://linkedin.com/jobs/*",
-        "https://*.greenhouse.io/*",
-        "https://jobright.ai/jobs/*",
-        "https://www.jobright.ai/jobs/*"
-      ]
-    }
-  ]
+  }
 }

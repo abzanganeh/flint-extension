@@ -3,6 +3,7 @@ import {
   finalizeJdText,
   isMetadataHeavy,
 } from "../src/jdParse.js";
+import { resolveLinkedInJobFetchUrl } from "../src/linkedinJobUrl.js";
 import selectorsConfig from "./jd-selectors.json";
 
 const HEURISTIC_MIN_LENGTH = 200;
@@ -155,7 +156,9 @@ async function extractFromJsonLdWithFetchFallback(): Promise<{
   const live = extractFromJsonLdInDocument(document);
   if (live) return live;
 
-  const html = await fetchPageHtmlViaServiceWorker(document.location.href);
+  const html = await fetchPageHtmlViaServiceWorker(
+    resolveLinkedInJobFetchUrl(document.location.href),
+  );
   if (!html) return null;
 
   const doc = new DOMParser().parseFromString(html, "text/html");
@@ -266,19 +269,62 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   });
 }
 
+function isKnownSpaHost(): boolean {
+  // These SPAs never have JSON-LD in their server-rendered HTML — skip the
+  // expensive SW fetch and go straight to DOM selectors.
+  const host = window.location.hostname;
+  return (
+    host.includes("linkedin.com") ||
+    host.includes("myworkdayjobs.com") ||
+    host.includes("greenhouse.io")
+  );
+}
+
 async function _extractJDInner(): Promise<ExtractedJD> {
   const config: SelectorsConfig = selectorsConfig;
 
-  // --- Layer 1: JSON-LD JobPosting (live DOM → SW fetch → regex) ---
-  const jsonLd = await extractFromJsonLdWithFetchFallback();
-  if (jsonLd && jsonLd.text.length >= HEURISTIC_MIN_LENGTH) {
-    return {
-      title: jsonLd.title || document.title,
-      company: jsonLd.company,
-      text: jsonLd.text,
-      url: window.location.href,
-      extraction_method: "structured",
-    };
+  // --- Layer 1 (SPA-aware): known-site DOM selectors run first for SPAs ---
+  // For SPA-based ATSes the DOM is already rendered; going to DOM selectors
+  // immediately avoids a 2-3s SW network fetch that always comes back empty.
+  if (isKnownSpaHost()) {
+    const site = detectSite(config);
+    if (site) {
+      const title = sanitizeText(queryFirst(site.title));
+      const company = sanitizeText(queryFirst(site.company));
+      const text = finalizeJdText(queryFirst(site.description));
+      if (text.length >= HEURISTIC_MIN_LENGTH && !isMetadataHeavy(text)) {
+        return {
+          title: title || document.title,
+          company,
+          text,
+          url: window.location.href,
+          extraction_method: "structured",
+        };
+      }
+    }
+    // Fall through to JSON-LD check (live DOM only, no SW fetch for SPAs).
+    const liveLd = extractFromJsonLdInDocument(document);
+    if (liveLd && liveLd.text.length >= HEURISTIC_MIN_LENGTH) {
+      return {
+        title: liveLd.title || document.title,
+        company: liveLd.company,
+        text: liveLd.text,
+        url: window.location.href,
+        extraction_method: "structured",
+      };
+    }
+  } else {
+    // --- Layer 1: JSON-LD JobPosting (live DOM → SW fetch → regex) ---
+    const jsonLd = await extractFromJsonLdWithFetchFallback();
+    if (jsonLd && jsonLd.text.length >= HEURISTIC_MIN_LENGTH) {
+      return {
+        title: jsonLd.title || document.title,
+        company: jsonLd.company,
+        text: jsonLd.text,
+        url: window.location.href,
+        extraction_method: "structured",
+      };
+    }
   }
 
   // --- Layer 2: DOM block containing "Job Summary:" (iCIMS/Kaiser live DOM) ---
@@ -293,7 +339,7 @@ async function _extractJDInner(): Promise<ExtractedJD> {
     };
   }
 
-  // --- Layer 3: Known-site structured selectors ---
+  // --- Layer 3: Known-site structured selectors (non-SPA hosts reach here) ---
   const site = detectSite(config);
   if (site) {
     const title = sanitizeText(queryFirst(site.title));

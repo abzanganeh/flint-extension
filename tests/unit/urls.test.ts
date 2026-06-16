@@ -1,5 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { buildTailorInFlintResumeUrl } from "../../src/urls.js";
+import { buildExtensionOAuthRedirectUri, buildTailorInFlintResumeUrl } from "../../src/urls.js";
+
+describe("buildExtensionOAuthRedirectUri", () => {
+  it("uses a dedicated callback path separate from NextAuth", () => {
+    expect(buildExtensionOAuthRedirectUri()).toBe(
+      "http://localhost:3000/auth/extension/google/callback",
+    );
+  });
+});
 
 describe("buildTailorInFlintResumeUrl", () => {
   it("opens Flint Resume wizard with extension jd_id", () => {

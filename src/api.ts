@@ -12,17 +12,33 @@ const API_BASE = getApiBaseUrl();
 // throws AuthError. Callers MUST NOT call clearAuth themselves on a 401 —
 // clearAuth is idempotent so a duplicate call is harmless, but relying on
 // this contract keeps refresh / login / save paths uniform.
+
+const REQUEST_TIMEOUT_MS = 6000;
+
 async function request<T>(
   path: string,
   options: RequestInit,
 ): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.headers ?? {}),
-    },
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        ...(options.headers ?? {}),
+      },
+    });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new ApiError(0, `Request to ${path} timed out`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 
   if (response.status === 401) {
     await clearAuth();

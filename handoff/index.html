@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Opening Flint…</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        margin: 2rem;
+        color: #334155;
+      }
+    </style>
+  </head>
+  <body>
+    <p>Opening Flint desktop…</p>
+    <script>
+      (function () {
+        var params = new URLSearchParams(location.search);
+        var target = params.get("target");
+        if (!target || target.indexOf("flint://") !== 0) {
+          document.body.textContent = "Invalid handoff link.";
+          return;
+        }
+
+        function tryNavigate() {
+          try {
+            location.replace(target);
+          } catch (e) {
+            /* ignore */
+          }
+          var anchor = document.createElement("a");
+          anchor.href = target;
+          anchor.rel = "noopener noreferrer";
+          document.body.appendChild(anchor);
+          anchor.click();
+        }
+
+        tryNavigate();
+        setTimeout(tryNavigate, 80);
+        setTimeout(function () {
+          try {
+            window.close();
+          } catch (e) {
+            /* ignore */
+          }
+        }, 1600);
+      })();
+    </script>
+  </body>
+</html>
