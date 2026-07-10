@@ -724,6 +724,14 @@ export function Popup(): React.ReactElement {
         <button
           type="button"
           className="btn-secondary"
+          disabled
+          title="Scaffold — not ready"
+        >
+          Autofill (beta)
+        </button>
+        <button
+          type="button"
+          className="btn-secondary"
           onClick={handlePrepInFlintDesktop}
         >
           Prep in Flint (desktop)

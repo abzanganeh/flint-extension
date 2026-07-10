@@ -15,6 +15,7 @@ export default defineConfig(({ mode }) => {
         targets: [
           { src: "manifest.json", dest: "." },
           { src: "content/jd-selectors.json", dest: "content" },
+          { src: "content/autofill/selectors.json", dest: "content/autofill" },
           { src: "icons/*", dest: "icons" },
           { src: "handoff/index.html", dest: "handoff" },
           { src: "popup/popup.css", dest: "popup" },
