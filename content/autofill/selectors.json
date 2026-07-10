@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "status": "scaffold",
+  "notes": "Stub selectors only — do not enable production fill until DOM validated on Greenhouse + LinkedIn test accounts.",
+  "greenhouse": {
+    "host_patterns": ["*.greenhouse.io", "boards.greenhouse.io"],
+    "fields": []
+  },
+  "linkedin": {
+    "host_patterns": ["*.linkedin.com"],
+    "fields": []
+  }
+}

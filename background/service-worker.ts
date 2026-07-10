@@ -1,8 +1,10 @@
 import {
   ensureRefreshAlarmRegistered,
+  getAccessTokenOrNull,
   handleRefreshAlarm,
   loginWithGoogle,
 } from "../src/auth.js";
+import { fetchAutofillPayload } from "../src/autofillApi.js";
 import { openFlintDeepLink } from "../src/flintDeepLink.js";
 import { formatApiErrorMessage } from "../src/formatApiError.js";
 import { extractJobPostingFromHtml } from "../src/jdParse.js";
@@ -113,6 +115,27 @@ chrome.runtime.onMessage.addListener(
         .catch((err: unknown) => {
           const error = err instanceof Error ? err.message : "Script injection failed";
           sendResponse({ ok: false, error } satisfies InjectJdExtractorResult);
+        });
+      return true;
+    }
+
+    if (message.type === "FETCH_AUTOFILL_PAYLOAD") {
+      void getAccessTokenOrNull()
+        .then(async (token) => {
+          if (!token) {
+            sendResponse({ error: "Not logged in" });
+            return;
+          }
+          const payload = await fetchAutofillPayload(message.jdId, token);
+          if (!payload) {
+            sendResponse({ error: "Autofill payload not available (scaffold)" });
+            return;
+          }
+          sendResponse({ payload });
+        })
+        .catch((err: unknown) => {
+          const error = err instanceof Error ? err.message : "Fetch failed";
+          sendResponse({ error });
         });
       return true;
     }
