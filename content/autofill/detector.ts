@@ -166,6 +166,20 @@ function buildElementSelector(el: Element): string {
   return `${tag}:nth-of-type(${index + 1})`;
 }
 
+function selectorKeyToConcept(key: string): FieldConcept | null {
+  const map: Record<string, FieldConcept> = {
+    first_name: "name",
+    last_name: "name",
+    email: "email",
+    phone: "phone",
+    resume: "resume",
+    cover_letter: "cover_letter",
+    linkedin_url: "linkedin_url",
+    work_authorization: "work_authorization",
+  };
+  return map[key] ?? null;
+}
+
 function selectorMapMatch(
   el: Element,
   platform: Platform,
@@ -176,7 +190,9 @@ function selectorMapMatch(
   for (const field of fields) {
     try {
       if (el.matches(field.selector)) {
-        return { concept: field.key as FieldConcept, selector: field.selector };
+        const concept = selectorKeyToConcept(field.key);
+        if (!concept) continue;
+        return { concept, selector: field.selector };
       }
     } catch {
       // Invalid selector in JSON — skip.

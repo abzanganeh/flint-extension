@@ -4,6 +4,7 @@ dist/
 .env
 *.local
 coverage/
+tests/e2e/generated/
 key.pem
 *.pem
 web-ext-artifacts/

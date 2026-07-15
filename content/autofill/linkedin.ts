@@ -1,7 +1,7 @@
 import type { AutofillPayload, FillResult } from "./types.js";
 import { emptyFillResult } from "./types.js";
 
-/** Scaffold — no DOM mutation until selectors are validated. */
+/** LinkedIn fill remains scaffold until slice 12 user gate + slice 13 implementation. */
 export function fillLinkedIn(_payload: AutofillPayload): FillResult {
   return emptyFillResult();
 }
