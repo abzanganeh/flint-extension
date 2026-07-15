@@ -13,6 +13,7 @@ import { isLinkedInJobPage, resolveLinkedInJobFetchUrl } from "../src/linkedinJo
 import { isUncertainJdSource } from "../src/jdCompleteness.js";
 import { pickBetterJd, scoreJdText, finalizeJdText, extractJobPostingFromHtml, truncateJdText } from "../src/jdParse.js";
 import { buildFlintImportDeepLink, dispatchFlintDeepLinkFromPopup, FLINT_DOWNLOAD_URL, openFlintDeepLinkFromPopup } from "../src/flintDeepLink.js";
+import { isAutofillEnabled, isGreenhouseHost, isLinkedInHost } from "../src/autofillFlags.js";
 
 const GOOGLE_ENABLED = Boolean(getGoogleClientId());
 
@@ -228,6 +229,8 @@ export function Popup(): React.ReactElement {
   const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [loadingStatus, setLoadingStatus] = useState<string>("Detecting job description…");
+  const [autofillEnabled, setAutofillEnabled] = useState(true);
+  const [autofillHint, setAutofillHint] = useState<string | null>(null);
 
   useEffect(() => {
     void _init();
@@ -528,6 +531,69 @@ export function Popup(): React.ReactElement {
     }
   }
 
+  useEffect(() => {
+    void isAutofillEnabled().then(setAutofillEnabled);
+  }, [view]);
+
+  async function handleAutofillBeta(): Promise<void> {
+    if (!savedJdId) return;
+    setAutofillHint(null);
+
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id) {
+      setAutofillHint("Open the job application tab, then try Autofill again.");
+      return;
+    }
+
+    await new Promise<void>((resolve) => {
+      chrome.tabs.sendMessage(
+        tab.id!,
+        { type: "PROBE_AUTOFILL", jdId: savedJdId },
+        (response: { ok?: boolean; error?: string } | undefined) => {
+          if (chrome.runtime.lastError) {
+            setAutofillHint(
+              isGreenhouseHost(tab.url)
+                ? "Reload the Greenhouse application page, then try Autofill again."
+                : "Open the Greenhouse application form for this job, then try Autofill again.",
+            );
+          } else if (response?.error === "no_form") {
+            setAutofillHint("Open the application form page, then try Autofill again.");
+          } else if (response?.error === "Autofill disabled") {
+            setAutofillHint("Autofill is turned off in extension settings.");
+          }
+          resolve();
+        },
+      );
+    });
+  }
+
+  function renderAutofillButton(): React.ReactElement {
+    const linkedInPage = isLinkedInHost(tabUrl);
+    const greenhousePage = isGreenhouseHost(tabUrl);
+    const disabled = !autofillEnabled || linkedInPage;
+
+    let title = "Fill the Greenhouse application form from your tailored resume";
+    if (linkedInPage) {
+      title = "LinkedIn Easy Apply autofill is coming soon";
+    } else if (!autofillEnabled) {
+      title = "Autofill is disabled";
+    } else if (!greenhousePage) {
+      title = "Open the Greenhouse application form, then click Autofill";
+    }
+
+    return (
+      <button
+        type="button"
+        className="btn-secondary"
+        disabled={disabled}
+        title={title}
+        onClick={() => void handleAutofillBeta()}
+      >
+        {linkedInPage ? "Autofill (coming soon)" : "Autofill (beta)"}
+      </button>
+    );
+  }
+
   if (view === "loading") {
     return (
       <div className="popup">
@@ -722,14 +788,8 @@ export function Popup(): React.ReactElement {
         <button className="btn-primary" onClick={handleTailorInFlintResume}>
           Tailor in Flint Resume
         </button>
-        <button
-          type="button"
-          className="btn-secondary"
-          disabled
-          title="Scaffold — not ready"
-        >
-          Autofill (beta)
-        </button>
+        {renderAutofillButton()}
+        {autofillHint && <p className="hint hint-compact">{autofillHint}</p>}
         <button
           type="button"
           className="btn-secondary"
