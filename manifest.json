@@ -55,6 +55,11 @@
       ],
       "js": ["content/jd-extractor.js"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://*.greenhouse.io/*"],
+      "js": ["content/autofill-runner.js"],
+      "run_at": "document_idle"
     }
   ],
   "browser_specific_settings": {

@@ -225,7 +225,7 @@ export function detectApplicationForm(root: ParentNode, hostname = ""): Detectio
   const fieldCandidates: FieldCandidate[] = [];
   const seenConcepts = new Set<FieldConcept>();
 
-  for (const el of root.querySelectorAll(INPUT_SELECTOR)) {
+  for (const el of Array.from(root.querySelectorAll(INPUT_SELECTOR))) {
     const inputType = (el as HTMLInputElement).type?.toLowerCase() ?? "";
     const mapped = selectorMapMatch(el, platform);
     if (mapped && !seenConcepts.has(mapped.concept)) {

@@ -4,7 +4,10 @@ import {
   handleRefreshAlarm,
   loginWithGoogle,
 } from "../src/auth.js";
-import { fetchAutofillPayload } from "../src/autofillApi.js";
+import {
+  fetchAutofillPayload,
+  fetchRecentTailoredSessions,
+} from "../src/autofillApi.js";
 import { openFlintDeepLink } from "../src/flintDeepLink.js";
 import { formatApiErrorMessage } from "../src/formatApiError.js";
 import { extractJobPostingFromHtml } from "../src/jdParse.js";
@@ -123,19 +126,42 @@ chrome.runtime.onMessage.addListener(
       void getAccessTokenOrNull()
         .then(async (token) => {
           if (!token) {
-            sendResponse({ error: "Not logged in" });
+            sendResponse({ error: "Not logged in", code: "not_authenticated" });
             return;
           }
-          const payload = await fetchAutofillPayload(message.jdId, token);
-          if (!payload) {
-            sendResponse({ error: "Autofill payload not available (scaffold)" });
+          const result = await fetchAutofillPayload(message.jdId, token);
+          if (!result.ok) {
+            sendResponse({
+              error:
+                result.code === "not_tailored"
+                  ? "Autofill payload not available until the resume is tailored"
+                  : "Autofill payload not available",
+              code: result.code,
+            });
             return;
           }
-          sendResponse({ payload });
+          sendResponse({ payload: result.payload });
         })
         .catch((err: unknown) => {
           const error = err instanceof Error ? err.message : "Fetch failed";
           sendResponse({ error });
+        });
+      return true;
+    }
+
+    if (message.type === "FETCH_RECENT_TAILORED_SESSIONS") {
+      void getAccessTokenOrNull()
+        .then(async (token) => {
+          if (!token) {
+            sendResponse({ error: "Not logged in", sessions: [] });
+            return;
+          }
+          const sessions = await fetchRecentTailoredSessions(token);
+          sendResponse({ sessions });
+        })
+        .catch((err: unknown) => {
+          const error = err instanceof Error ? err.message : "Fetch failed";
+          sendResponse({ error, sessions: [] });
         });
       return true;
     }

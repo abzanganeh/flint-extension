@@ -27,7 +27,7 @@ const INPUT_SELECTOR = "input:not([type='hidden']), textarea, select";
 
 function formStructureSignature(root: ParentNode): string {
   const parts: string[] = [];
-  for (const el of root.querySelectorAll(INPUT_SELECTOR)) {
+  for (const el of Array.from(root.querySelectorAll(INPUT_SELECTOR))) {
     const htmlEl = el as HTMLElement;
     parts.push(
       [

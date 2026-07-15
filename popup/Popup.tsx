@@ -260,6 +260,7 @@ export function Popup(): React.ReactElement {
         setView("login");
         return;
       }
+      chrome.runtime.sendMessage({ type: "FETCH_RECENT_TAILORED_SESSIONS" });
       setLoadingStatus("Reading the job posting…");
       await _extractJD();
     } catch (err) {

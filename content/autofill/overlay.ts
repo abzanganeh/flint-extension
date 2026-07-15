@@ -362,6 +362,29 @@ export class AutofillOverlay {
     }, 2400);
   }
 
+  showMessage(title: string, subtitle: string): void {
+    this.renderPanel((panel) => {
+      const heading = document.createElement("p");
+      heading.className = "title";
+      heading.textContent = title;
+
+      const body = document.createElement("p");
+      body.className = "subtitle";
+      body.textContent = subtitle;
+
+      const actions = this.buildActions([
+        {
+          label: "Dismiss",
+          className: "btn-secondary",
+          onClick: () => this.markDismissed(),
+        },
+      ]);
+
+      panel.append(heading, body, actions);
+    });
+    this.view = "result";
+  }
+
   hide(): void {
     if (this.panel) {
       this.panel.hidden = true;
