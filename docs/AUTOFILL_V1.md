@@ -1,7 +1,10 @@
 # Autofill v1 — Architecture (scaffold)
 
 > **Status:** Phase 4 kickoff scaffold only. No production DOM fill.  
-> **Strategy B:** §4 · **Manual gate:** Greenhouse + LinkedIn test accounts required before enabling fill.
+> **Strategy B:** §4 · **Manual gate:** Greenhouse + LinkedIn test accounts required before enabling fill.  
+> **Loop-engineering task file:** `.cursor/skills/extension-loop-engineering/tasks/autofill-v1-full.md`
+> (kickoff: `/extension-loop autofill-v1-full start`). Do not run until the
+> user explicitly issues that command.
 
 ## Goals
 
