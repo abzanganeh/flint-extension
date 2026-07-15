@@ -39,8 +39,16 @@ describe("pickSessionMatch", () => {
     }
   });
 
-  it("returns none when no host matches", () => {
+  it("returns a picker when the host does not match any saved session", () => {
     const match = pickSessionMatch(sessions, "example.com");
+    expect(match.kind).toBe("picker");
+    if (match.kind === "picker") {
+      expect(match.sessions).toHaveLength(3);
+    }
+  });
+
+  it("returns none when there are no sessions", () => {
+    const match = pickSessionMatch([], "boards.greenhouse.io");
     expect(match.kind).toBe("none");
   });
 });

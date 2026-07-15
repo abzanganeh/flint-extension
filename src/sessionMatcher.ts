@@ -34,8 +34,10 @@ export function pickSessionMatch(
   hostname: string,
   companyHint = "",
 ): { kind: "single"; session: TailoredSessionOption } | { kind: "picker"; sessions: TailoredSessionOption[] } | { kind: "none" } {
+  if (sessions.length === 0) return { kind: "none" };
+
   const matches = matchTailoredSessions(sessions, hostname, companyHint);
-  if (matches.length === 0) return { kind: "none" };
+  if (matches.length === 0) return { kind: "picker", sessions };
   if (matches.length === 1) return { kind: "single", session: matches[0]! };
   return { kind: "picker", sessions: matches };
 }
