@@ -1,10 +1,39 @@
 {
-  "version": 1,
-  "status": "scaffold",
-  "notes": "Stub selectors only — do not enable production fill until DOM validated on Greenhouse + LinkedIn test accounts.",
+  "version": 2,
+  "status": "greenhouse_validated_fixture",
+  "notes": "Greenhouse selectors validated against tests/fixtures/autofill/greenhouse/apply-form.html. LinkedIn remains scaffold until user gate (slice 12).",
   "greenhouse": {
     "host_patterns": ["*.greenhouse.io", "boards.greenhouse.io"],
-    "fields": []
+    "fields": [
+      {
+        "key": "first_name",
+        "selector": "[name='job_application[first_name]']"
+      },
+      {
+        "key": "last_name",
+        "selector": "[name='job_application[last_name]']"
+      },
+      {
+        "key": "email",
+        "selector": "[name='job_application[email]']"
+      },
+      {
+        "key": "phone",
+        "selector": "[name='job_application[phone]']"
+      },
+      {
+        "key": "resume",
+        "selector": "[name='job_application[resume]']"
+      },
+      {
+        "key": "linkedin_url",
+        "selector": "[name='job_application[urls][LinkedIn]']"
+      },
+      {
+        "key": "work_authorization",
+        "selector": "[name='job_application[answers][work_authorization]']"
+      }
+    ]
   },
   "linkedin": {
     "host_patterns": ["*.linkedin.com"],

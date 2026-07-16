@@ -1,7 +1,7 @@
-# Autofill v1 — Architecture (scaffold)
+# Autofill v1 — Detect, confidence-scored fill, multi-step continuation
 
-> **Status:** Phase 4 kickoff scaffold only. No production DOM fill.  
-> **Strategy B:** §4 · **Manual gate:** Greenhouse + LinkedIn test accounts required before enabling fill.
+> **Status:** Greenhouse beta shipped on branch `feature/autofill-v1-full` (overlay + continuation + popup probe). LinkedIn deferred (slice 12 gate).  
+> **Strategy B:** §4 · **Manual gate passed for Greenhouse fixtures;** live Greenhouse retest still recommended before store release.
 
 ## Goals
 

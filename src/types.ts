@@ -55,7 +55,9 @@ export type PopupMessage =
   | { type: "PARSE_JD_FROM_URL"; url: string }
   | { type: "OPEN_FLINT_DEEP_LINK"; url: string }
   | { type: "INJECT_JD_EXTRACTOR"; tabId: number }
-  | { type: "FETCH_AUTOFILL_PAYLOAD"; jdId: string };
+  | { type: "FETCH_AUTOFILL_PAYLOAD"; jdId: string }
+  | { type: "FETCH_RECENT_TAILORED_SESSIONS" }
+  | { type: "PROBE_AUTOFILL"; jdId?: string };
 
 export type AutofillPayloadResult =
   | { payload: import("../content/autofill/types.js").AutofillPayload }

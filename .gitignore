@@ -1,8 +1,11 @@
 node_modules/
 dist/
+.cursor/
 .env
 *.local
 coverage/
+tests/e2e/generated/
+test-results/
 key.pem
 *.pem
 web-ext-artifacts/
