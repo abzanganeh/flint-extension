@@ -15,6 +15,22 @@ LinkedIn and Greenhouse and opens them in Flint desktop with one click.
 
 Not in Phase 2: autofill, Supabase SSO, bidirectional IPC.
 
+## Floating panel
+
+On LinkedIn, Greenhouse, and Jobright job pages the extension injects a
+Jobright-style floating logo (bottom-right FAB). Click it to open a ~360px
+in-page drawer that hosts the same popup UI as an extension-origin iframe;
+click outside the drawer or press Escape to collapse it back to the logo.
+Auth/draft state lives in `chrome.storage` as before, so collapsing and
+reopening the drawer resumes exactly where you left off.
+
+On Chrome, clicking the toolbar icon (`chrome.action.onClicked`) expands the
+floating panel on the active tab instead of opening a popup window, injecting
+the content script on demand via `activeTab` if the page didn't already match
+the declared content script hosts. Firefox keeps the classic popup
+(`default_popup`, restored by `scripts/patch-firefox-manifest.mjs`) since it
+does not go through this floating-panel flow.
+
 ## Requirements
 
 - Node.js >= 18

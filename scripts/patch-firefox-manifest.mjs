@@ -14,5 +14,11 @@ manifest.background.service_worker ??= "background/service-worker.js";
 manifest.background.type ??= "module";
 manifest.background.scripts ??= [manifest.background.service_worker];
 
+// Firefox has no chrome.action.onClicked-driven floating panel injection
+// path yet (out of scope for this milestone) — keep the classic popup so
+// the toolbar icon still opens something on click.
+manifest.action ??= {};
+manifest.action.default_popup ??= "popup/index.html";
+
 writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-console.log("Patched dist/manifest.json for Firefox (background.scripts)");
+console.log("Patched dist/manifest.json for Firefox (background.scripts, default_popup)");
