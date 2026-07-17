@@ -9,7 +9,12 @@
 import { getPanelExpanded, setPanelExpanded } from "./panelState.js";
 
 const HOST_ATTRIBUTE = "data-flint-floating-shell";
+const LISTENERS_ATTRIBUTE = "data-flint-floating-listeners";
+const COLLAPSE_MESSAGE_TYPE = "FLINT_FLOATING_COLLAPSE";
 const DRAWER_WIDTH_PX = 360;
+
+/** Single active controller for document-level listeners (avoids stacked handlers). */
+let activeShell: FloatingShell | null = null;
 
 const SHELL_STYLES = `
   :host {
@@ -105,6 +110,37 @@ const SHELL_STYLES = `
   }
 `;
 
+function onDocumentClick(event: MouseEvent): void {
+  activeShell?.handleOutsideClick(event);
+}
+
+function onDocumentKeydown(event: KeyboardEvent): void {
+  if (event.key === "Escape") activeShell?.handleEscape();
+}
+
+function onFrameMessage(event: MessageEvent): void {
+  activeShell?.handleFrameMessage(event);
+}
+
+function ensureDocumentListeners(): void {
+  if (document.documentElement.hasAttribute(LISTENERS_ATTRIBUTE)) return;
+  document.documentElement.setAttribute(LISTENERS_ATTRIBUTE, "1");
+  // Capture phase so a page's stopPropagation() on bubbling click handlers
+  // cannot suppress the outside-click collapse.
+  document.addEventListener("click", onDocumentClick, true);
+  document.addEventListener("keydown", onDocumentKeydown);
+  // Escape inside the extension iframe never bubbles to the parent document —
+  // the popup posts FLINT_FLOATING_COLLAPSE instead.
+  window.addEventListener("message", onFrameMessage);
+}
+
+function teardownDocumentListeners(): void {
+  document.removeEventListener("click", onDocumentClick, true);
+  document.removeEventListener("keydown", onDocumentKeydown);
+  window.removeEventListener("message", onFrameMessage);
+  document.documentElement.removeAttribute(LISTENERS_ATTRIBUTE);
+}
+
 export class FloatingShell {
   private host: HTMLElement | null = null;
   private shadow: ShadowRoot | null = null;
@@ -112,20 +148,12 @@ export class FloatingShell {
   private drawerEl: HTMLElement | null = null;
   private frameEl: HTMLIFrameElement | null = null;
   private expanded = false;
-  private listenersBound = false;
-
-  private readonly onDocumentClick = (event: MouseEvent): void => {
-    if (!this.expanded || !this.host) return;
-    if (event.composedPath().includes(this.host)) return;
-    this.collapse();
-  };
-
-  private readonly onDocumentKeydown = (event: KeyboardEvent): void => {
-    if (event.key === "Escape" && this.expanded) this.collapse();
-  };
 
   mount(anchor: HTMLElement = document.body): void {
-    if (this.host) return;
+    if (this.host) {
+      activeShell = this;
+      return;
+    }
 
     const existing = document.querySelector(`[${HOST_ATTRIBUTE}]`);
     if (existing instanceof HTMLElement && existing.shadowRoot) {
@@ -137,7 +165,9 @@ export class FloatingShell {
       this.fabButton = this.shadow.querySelector<HTMLButtonElement>(".fab");
       this.drawerEl = this.shadow.querySelector<HTMLElement>(".drawer");
       this.frameEl = this.shadow.querySelector<HTMLIFrameElement>(".drawer-frame");
-      this.bindGlobalListeners();
+      this.expanded = Boolean(this.drawerEl && !this.drawerEl.hidden);
+      activeShell = this;
+      ensureDocumentListeners();
       return;
     }
 
@@ -155,7 +185,8 @@ export class FloatingShell {
     this.shadow.append(this.fabButton, this.drawerEl);
     anchor.appendChild(this.host);
 
-    this.bindGlobalListeners();
+    activeShell = this;
+    ensureDocumentListeners();
   }
 
   isExpanded(): boolean {
@@ -164,6 +195,7 @@ export class FloatingShell {
 
   expand(): void {
     if (!this.host) this.mount();
+    activeShell = this;
     this.expanded = true;
     if (this.drawerEl) this.drawerEl.hidden = false;
     if (this.fabButton) this.fabButton.hidden = true;
@@ -188,10 +220,29 @@ export class FloatingShell {
     if (shouldExpand) this.expand();
   }
 
+  handleOutsideClick(event: MouseEvent): void {
+    if (!this.expanded || !this.host) return;
+    if (event.composedPath().includes(this.host)) return;
+    this.collapse();
+  }
+
+  handleEscape(): void {
+    if (this.expanded) this.collapse();
+  }
+
+  handleFrameMessage(event: MessageEvent): void {
+    if (!this.expanded || !this.frameEl) return;
+    if (event.source !== this.frameEl.contentWindow) return;
+    const data = event.data as { type?: unknown } | null;
+    if (!data || data.type !== COLLAPSE_MESSAGE_TYPE) return;
+    this.collapse();
+  }
+
   destroy(): void {
-    document.removeEventListener("click", this.onDocumentClick, true);
-    document.removeEventListener("keydown", this.onDocumentKeydown);
-    this.listenersBound = false;
+    if (activeShell === this) {
+      activeShell = null;
+      teardownDocumentListeners();
+    }
     this.host?.remove();
     this.host = null;
     this.shadow = null;
@@ -199,15 +250,6 @@ export class FloatingShell {
     this.drawerEl = null;
     this.frameEl = null;
     this.expanded = false;
-  }
-
-  private bindGlobalListeners(): void {
-    if (this.listenersBound) return;
-    // Capture phase so a page's stopPropagation() on bubbling click handlers
-    // cannot suppress the outside-click collapse.
-    document.addEventListener("click", this.onDocumentClick, true);
-    document.addEventListener("keydown", this.onDocumentKeydown);
-    this.listenersBound = true;
   }
 
   private buildFabButton(): HTMLButtonElement {

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FloatingShell } from "../../content/floating/shell.js";
 import { getPanelExpanded } from "../../content/floating/panelState.js";
 import { resetChromeStore } from "../setup.js";
@@ -166,5 +166,45 @@ describe("FloatingShell", () => {
 
     expect(document.querySelector("[data-flint-floating-shell]")).toBeNull();
     expect(shell.isExpanded()).toBe(false);
+  });
+
+  it("collapses when the drawer iframe posts FLINT_FLOATING_COLLAPSE", () => {
+    const shell = new FloatingShell();
+    shell.mount();
+    shell.expand();
+
+    const host = document.querySelector("[data-flint-floating-shell]") as HTMLElement;
+    const frame = host.shadowRoot!.querySelector(".drawer-frame") as HTMLIFrameElement;
+    Object.defineProperty(frame, "contentWindow", {
+      value: window,
+      configurable: true,
+    });
+
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        data: { type: "FLINT_FLOATING_COLLAPSE" },
+        source: window,
+      }),
+    );
+
+    expect(shell.isExpanded()).toBe(false);
+  });
+
+  it("does not stack document listeners across two FloatingShell instances", () => {
+    const clickSpy = vi.spyOn(document, "addEventListener");
+    const first = new FloatingShell();
+    first.mount();
+    const clickCallsAfterFirst = clickSpy.mock.calls.filter(
+      (call) => call[0] === "click" && call[2] === true,
+    ).length;
+
+    const second = new FloatingShell();
+    second.mount();
+    const clickCallsAfterSecond = clickSpy.mock.calls.filter(
+      (call) => call[0] === "click" && call[2] === true,
+    ).length;
+
+    expect(clickCallsAfterSecond).toBe(clickCallsAfterFirst);
+    clickSpy.mockRestore();
   });
 });

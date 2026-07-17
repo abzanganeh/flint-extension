@@ -76,6 +76,24 @@
       "run_at": "document_idle"
     }
   ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "popup/index.html",
+        "popup/*",
+        "assets/*",
+        "chunks/*",
+        "icons/icon48.png"
+      ],
+      "matches": [
+        "https://www.linkedin.com/*",
+        "https://linkedin.com/*",
+        "https://*.greenhouse.io/*",
+        "https://jobright.ai/*",
+        "https://www.jobright.ai/*"
+      ]
+    }
+  ],
   "browser_specific_settings": {
     "gecko": {
       "id": "flint@flint.app",

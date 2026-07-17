@@ -10,6 +10,9 @@ const FLOATING_SHELL_SCRIPT = "content/floating-shell.js";
 
 const EXPAND_MESSAGE: PopupMessage = { type: "EXPAND_FLOATING_PANEL" };
 
+/** Dedup concurrent toolbar clicks so we never double-inject into one tab. */
+const inflightByTab = new Map<number, Promise<void>>();
+
 async function sendExpandMessage(tabId: number): Promise<boolean> {
   try {
     const response = (await chrome.tabs.sendMessage(
@@ -24,9 +27,7 @@ async function sendExpandMessage(tabId: number): Promise<boolean> {
   }
 }
 
-export async function injectAndExpandFloatingPanel(tabId: number | undefined): Promise<void> {
-  if (typeof tabId !== "number") return;
-
+async function injectAndExpandOnce(tabId: number): Promise<void> {
   if (await sendExpandMessage(tabId)) return;
 
   try {
@@ -41,4 +42,20 @@ export async function injectAndExpandFloatingPanel(tabId: number | undefined): P
   }
 
   await sendExpandMessage(tabId);
+}
+
+export async function injectAndExpandFloatingPanel(tabId: number | undefined): Promise<void> {
+  if (typeof tabId !== "number") return;
+
+  const existing = inflightByTab.get(tabId);
+  if (existing) {
+    await existing;
+    return;
+  }
+
+  const work = injectAndExpandOnce(tabId).finally(() => {
+    inflightByTab.delete(tabId);
+  });
+  inflightByTab.set(tabId, work);
+  await work;
 }

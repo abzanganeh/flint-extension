@@ -22,6 +22,11 @@ body {
   gap: 12px;
 }
 
+html.flint-in-drawer .popup {
+  width: 100%;
+  max-width: 360px;
+}
+
 .popup-header {
   display: flex;
   justify-content: space-between;

@@ -74,4 +74,28 @@ describe("injectAndExpandFloatingPanel", () => {
     expect(sendMessage).toHaveBeenCalledTimes(1);
     expect(executeScript).toHaveBeenCalledTimes(1);
   });
+
+  it("dedupes concurrent inject calls for the same tab", async () => {
+    let resolveInject: (() => void) | undefined;
+    const { sendMessage, executeScript } = installChromeMocks({
+      sendMessage: () => Promise.reject(new Error("no listener")),
+      executeScript: () =>
+        new Promise((resolve) => {
+          resolveInject = () => resolve([]);
+        }),
+    });
+
+    const first = injectAndExpandFloatingPanel(13);
+    const second = injectAndExpandFloatingPanel(13);
+
+    // Let sendMessage reject and reach executeScript before asserting.
+    await vi.waitFor(() => {
+      expect(executeScript).toHaveBeenCalledTimes(1);
+    });
+
+    resolveInject?.();
+    await Promise.all([first, second]);
+    expect(executeScript).toHaveBeenCalledTimes(1);
+    expect(sendMessage).toHaveBeenCalled();
+  });
 });

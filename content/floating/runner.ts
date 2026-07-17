@@ -6,6 +6,12 @@
  */
 import { FloatingShell } from "./shell.js";
 
+declare global {
+  interface Window {
+    __flintFloatingShellStarted?: boolean;
+  }
+}
+
 let shellInstance: FloatingShell | null = null;
 
 function getFloatingShell(): FloatingShell {
@@ -16,19 +22,26 @@ function getFloatingShell(): FloatingShell {
   return shellInstance;
 }
 
-getFloatingShell()
-  .restorePersistedState()
-  .catch(() => {
-    // Best-effort restore only — the shell stays collapsed on failure.
+if (!window.__flintFloatingShellStarted) {
+  window.__flintFloatingShellStarted = true;
+
+  getFloatingShell()
+    .restorePersistedState()
+    .catch(() => {
+      // Best-effort restore only — the shell stays collapsed on failure.
+    });
+
+  chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
+    if (typeof message !== "object" || message === null) return false;
+    if ((message as { type?: unknown }).type !== "EXPAND_FLOATING_PANEL") return false;
+
+    getFloatingShell().expand();
+    sendResponse({ ok: true });
+    return false;
   });
-
-chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
-  if (typeof message !== "object" || message === null) return false;
-  if ((message as { type?: unknown }).type !== "EXPAND_FLOATING_PANEL") return false;
-
+} else {
+  // Duplicate executeScript injection — reuse the existing shell and expand.
   getFloatingShell().expand();
-  sendResponse({ ok: true });
-  return true;
-});
+}
 
 export {};
