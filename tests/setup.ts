@@ -2,6 +2,7 @@
 // Only surfaces the APIs exercised in src/auth.ts and src/storage.ts.
 
 const _store: Record<string, unknown> = {};
+const _sessionStore: Record<string, unknown> = {};
 const _alarms: Record<string, chrome.alarms.Alarm> = {};
 const _messageListeners: Array<
   (
@@ -37,6 +38,33 @@ const chromeMock: Partial<typeof chrome> = {
       },
       clear: () => {
         Object.keys(_store).forEach((k) => delete _store[k]);
+        return Promise.resolve();
+      },
+    },
+    session: {
+      get: (keys: string | string[] | Record<string, unknown> | null) => {
+        const keyList = Array.isArray(keys)
+          ? keys
+          : typeof keys === "string"
+            ? [keys]
+            : keys !== null
+              ? Object.keys(keys)
+              : Object.keys(_sessionStore);
+        const result: Record<string, unknown> = {};
+        for (const k of keyList) result[k] = _sessionStore[k];
+        return Promise.resolve(result);
+      },
+      set: (items: Record<string, unknown>) => {
+        Object.assign(_sessionStore, items);
+        return Promise.resolve();
+      },
+      remove: (keys: string | string[]) => {
+        const list = Array.isArray(keys) ? keys : [keys];
+        for (const k of list) delete _sessionStore[k];
+        return Promise.resolve();
+      },
+      clear: () => {
+        Object.keys(_sessionStore).forEach((k) => delete _sessionStore[k]);
         return Promise.resolve();
       },
     },
@@ -109,5 +137,6 @@ export function dispatchMessage(
 
 export function resetChromeStore(): void {
   Object.keys(_store).forEach((k) => delete _store[k]);
+  Object.keys(_sessionStore).forEach((k) => delete _sessionStore[k]);
   Object.keys(_alarms).forEach((k) => delete _alarms[k]);
 }
