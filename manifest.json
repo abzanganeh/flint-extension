@@ -25,7 +25,6 @@
     "type": "module"
   },
   "action": {
-    "default_popup": "popup/index.html",
     "default_title": "Flint Resume",
     "default_icon": {
       "16": "icons/icon16.png",

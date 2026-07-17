@@ -57,7 +57,10 @@ export type PopupMessage =
   | { type: "INJECT_JD_EXTRACTOR"; tabId: number }
   | { type: "FETCH_AUTOFILL_PAYLOAD"; jdId: string }
   | { type: "FETCH_RECENT_TAILORED_SESSIONS" }
-  | { type: "PROBE_AUTOFILL"; jdId?: string };
+  | { type: "PROBE_AUTOFILL"; jdId?: string }
+  | { type: "EXPAND_FLOATING_PANEL" };
+
+export type ExpandFloatingPanelResult = { ok: true } | { ok: false; error: string };
 
 export type AutofillPayloadResult =
   | { payload: import("../content/autofill/types.js").AutofillPayload }

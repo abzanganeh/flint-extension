@@ -9,6 +9,7 @@ import {
   fetchRecentTailoredSessions,
 } from "../src/autofillApi.js";
 import { openFlintDeepLink } from "../src/flintDeepLink.js";
+import { injectAndExpandFloatingPanel } from "../src/floatingPanelInject.js";
 import { formatApiErrorMessage } from "../src/formatApiError.js";
 import { extractJobPostingFromHtml } from "../src/jdParse.js";
 import type {
@@ -31,6 +32,13 @@ chrome.alarms.onAlarm.addListener((alarm: chrome.alarms.Alarm) => {
   handleRefreshAlarm(alarm.name).catch(() => {
     // Refresh failure is handled inside handleRefreshAlarm (clears auth).
   });
+});
+
+// Chrome ships with no default_popup so this fires on click; Firefox keeps
+// default_popup (restored by scripts/patch-firefox-manifest.mjs) so this
+// listener is simply unused there.
+chrome.action.onClicked.addListener((tab: chrome.tabs.Tab) => {
+  void injectAndExpandFloatingPanel(tab.id);
 });
 
 const SW_FETCH_TIMEOUT_MS = 4000;
