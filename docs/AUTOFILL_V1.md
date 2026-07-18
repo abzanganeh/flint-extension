@@ -1,7 +1,15 @@
 # Autofill v1 — Detect, confidence-scored fill, multi-step continuation
 
-> **Status:** Greenhouse beta shipped on branch `feature/autofill-v1-full` (overlay + continuation + popup probe). LinkedIn deferred (slice 12 gate).  
+> **Status:** Greenhouse beta shipped (PR #5). **In progress:** `feature/autofill-universal-fill` — heuristic fill for non-Greenhouse ATS hosts. LinkedIn Easy Apply still deferred (user gate).  
 > **Strategy B:** §4 · **Manual gate passed for Greenhouse fixtures;** live Greenhouse retest still recommended before store release.
+
+## Permission audit (universal-fill Slice 0)
+
+| Item | Current |
+|------|---------|
+| Autofill runner `content_scripts.matches` | `https://*.greenhouse.io/*` only |
+| `host_permissions` includes `"https://*/*"` | Yes (JD capture); **do not widen further** |
+| Universal-fill plan | Expand autofill runner matches to common ATS hosts (Slice 4); no new host_permissions |
 
 ## Goals
 
