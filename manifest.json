@@ -56,7 +56,24 @@
       "run_at": "document_idle"
     },
     {
-      "matches": ["https://*.greenhouse.io/*"],
+      "matches": [
+        "https://*.greenhouse.io/*",
+        "https://jobs.lever.co/*",
+        "https://*.lever.co/*",
+        "https://jobs.ashbyhq.com/*",
+        "https://*.ashbyhq.com/*",
+        "https://*.myworkdayjobs.com/*",
+        "https://*.icims.com/*",
+        "https://*.ukg.net/*",
+        "https://jobright.ai/*",
+        "https://www.jobright.ai/*",
+        "https://www.linkedin.com/jobs/*",
+        "https://www.linkedin.com/jobs/*/*",
+        "https://www.linkedin.com/jobs/*/*/*",
+        "https://linkedin.com/jobs/*",
+        "https://linkedin.com/jobs/*/*",
+        "https://linkedin.com/jobs/*/*/*"
+      ],
       "js": ["content/autofill-runner.js"],
       "run_at": "document_idle"
     },
