@@ -1,8 +1,10 @@
 import { observeApplicationSteps } from "./continuation.js";
 import { detectApplicationForm, observeApplicationForm } from "./detector.js";
+import type { FieldCandidate } from "./detector.js";
+import { fillApplicationForm } from "./fill-engine.js";
 import { fillGreenhouse } from "./greenhouse.js";
 import { AutofillOverlay } from "./overlay.js";
-import type { AutofillPayload } from "./types.js";
+import type { AutofillPayload, FillResult } from "./types.js";
 import type { TailoredSessionOption } from "../../src/autofillApi.js";
 import { isAutofillEnabled } from "../../src/autofillFlags.js";
 import { pickSessionMatch as matchTailoredSession } from "../../src/sessionMatcher.js";
@@ -21,6 +23,22 @@ interface AutofillPayloadResponse {
 interface ProbeAutofillMessage {
   type: "PROBE_AUTOFILL";
   jdId?: string;
+}
+
+/**
+ * Routing decision for which fill path to use. Greenhouse keeps its dedicated
+ * wrapper (selector map takes priority regardless of payload.platform); every
+ * other platform — including "unknown" — goes through the shared engine using
+ * whatever match source (payload selector, then detector heuristic) resolves.
+ */
+export function fillForPayload(
+  payload: AutofillPayload,
+  candidates: FieldCandidate[],
+  root: ParentNode,
+): FillResult {
+  return payload.platform === "greenhouse"
+    ? fillGreenhouse(payload, candidates, root)
+    : fillApplicationForm(payload, candidates, root);
 }
 
 function requestRecentSessions(): Promise<TailoredSessionOption[]> {
@@ -94,10 +112,7 @@ export function startAutofillController(): void {
     }
 
     const detection = detectApplicationForm(document.body, hostname);
-    const result =
-      response.payload.platform === "greenhouse"
-        ? fillGreenhouse(response.payload, detection.fieldCandidates, document.body)
-        : { fields: [], percent_filled: 0 };
+    const result = fillForPayload(response.payload, detection.fieldCandidates, document.body);
 
     filledThisStep = true;
     overlay.showResult(result);
