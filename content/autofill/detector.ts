@@ -166,18 +166,20 @@ function buildElementSelector(el: Element): string {
   return `${tag}:nth-of-type(${index + 1})`;
 }
 
+/** Maps AutofillFieldPayload/selector-map keys to detector concepts. Shared with fill-engine. */
+export const FIELD_KEY_TO_CONCEPT: Record<string, FieldConcept> = {
+  first_name: "name",
+  last_name: "name",
+  email: "email",
+  phone: "phone",
+  resume: "resume",
+  cover_letter: "cover_letter",
+  linkedin_url: "linkedin_url",
+  work_authorization: "work_authorization",
+};
+
 function selectorKeyToConcept(key: string): FieldConcept | null {
-  const map: Record<string, FieldConcept> = {
-    first_name: "name",
-    last_name: "name",
-    email: "email",
-    phone: "phone",
-    resume: "resume",
-    cover_letter: "cover_letter",
-    linkedin_url: "linkedin_url",
-    work_authorization: "work_authorization",
-  };
-  return map[key] ?? null;
+  return FIELD_KEY_TO_CONCEPT[key] ?? null;
 }
 
 function selectorMapMatch(

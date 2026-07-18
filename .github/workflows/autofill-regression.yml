@@ -18,8 +18,8 @@ jobs:
       - run: npm test -- tests/unit/autofill.test.ts tests/unit/detector.test.ts tests/unit/overlay.test.ts tests/unit/continuation.test.ts tests/unit/sessionMatcher.test.ts tests/unit/greenhouse-fixture.test.ts
       - run: npx playwright install chromium
       - run: npm run build:autofill-test
-      - run: npx playwright test tests/e2e/autofill-greenhouse.spec.ts tests/e2e/autofill-multistep.spec.ts
+      - run: npx playwright test tests/e2e/autofill-greenhouse.spec.ts tests/e2e/autofill-generic.spec.ts tests/e2e/autofill-multistep.spec.ts
       - name: Fixture note
         run: |
           echo "Static HTML fixtures catch our own selector/fill regressions only."
-          echo "They do not detect live Greenhouse/LinkedIn DOM drift."
+          echo "They do not detect live Greenhouse/LinkedIn/generic ATS DOM drift."

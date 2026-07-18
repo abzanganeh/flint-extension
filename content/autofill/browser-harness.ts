@@ -1,5 +1,6 @@
 import { observeApplicationSteps } from "./continuation.js";
 import { detectApplicationForm } from "./detector.js";
+import { fillApplicationForm } from "./fill-engine.js";
 import { fillGreenhouse } from "./greenhouse.js";
 import { AutofillOverlay } from "./overlay.js";
 
@@ -7,6 +8,7 @@ declare global {
   interface Window {
     __flintAutofillTest?: {
       fillGreenhouse: typeof fillGreenhouse;
+      fillApplicationForm: typeof fillApplicationForm;
       detectApplicationForm: typeof detectApplicationForm;
       observeApplicationSteps: typeof observeApplicationSteps;
       mountMultistepProbe: () => {
@@ -80,6 +82,7 @@ function mountMultistepProbe(): {
 
 window.__flintAutofillTest = {
   fillGreenhouse,
+  fillApplicationForm,
   detectApplicationForm,
   observeApplicationSteps,
   mountMultistepProbe,

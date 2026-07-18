@@ -13,7 +13,7 @@ import { isLinkedInJobPage, resolveLinkedInJobFetchUrl } from "../src/linkedinJo
 import { isUncertainJdSource } from "../src/jdCompleteness.js";
 import { pickBetterJd, scoreJdText, finalizeJdText, extractJobPostingFromHtml, truncateJdText } from "../src/jdParse.js";
 import { buildFlintImportDeepLink, dispatchFlintDeepLinkFromPopup, FLINT_DOWNLOAD_URL, openFlintDeepLinkFromPopup } from "../src/flintDeepLink.js";
-import { isAutofillEnabled, isGreenhouseHost, isLinkedInHost } from "../src/autofillFlags.js";
+import { isAutofillEnabled, isAutofillHost, isLinkedInHost } from "../src/autofillFlags.js";
 
 const GOOGLE_ENABLED = Boolean(getGoogleClientId());
 
@@ -552,9 +552,9 @@ export function Popup(): React.ReactElement {
         (response: { ok?: boolean; error?: string } | undefined) => {
           if (chrome.runtime.lastError) {
             setAutofillHint(
-              isGreenhouseHost(tab.url)
-                ? "Reload the Greenhouse application page, then try Autofill again."
-                : "Open the Greenhouse application form for this job, then try Autofill again.",
+              isAutofillHost(tab.url)
+                ? "Reload the application page, then try Autofill again."
+                : "Open a supported application form (Greenhouse, Lever, Ashby, Workday, and similar), then try Autofill again.",
             );
           } else if (response?.error === "no_form") {
             setAutofillHint("Open the application form page, then try Autofill again.");
@@ -568,17 +568,19 @@ export function Popup(): React.ReactElement {
   }
 
   function renderAutofillButton(): React.ReactElement {
-    const linkedInPage = isLinkedInHost(tabUrl);
-    const greenhousePage = isGreenhouseHost(tabUrl);
-    const disabled = !autofillEnabled || linkedInPage;
+    const autofillPage = isAutofillHost(tabUrl);
+    const linkedInJobsPage = isLinkedInHost(tabUrl) && autofillPage;
+    const disabled = !autofillEnabled || !autofillPage;
 
-    let title = "Fill the Greenhouse application form from your tailored resume";
-    if (linkedInPage) {
-      title = "LinkedIn Easy Apply autofill is coming soon";
-    } else if (!autofillEnabled) {
+    let title = "Fill the application form from your tailored resume";
+    if (!autofillEnabled) {
       title = "Autofill is disabled";
-    } else if (!greenhousePage) {
-      title = "Open the Greenhouse application form, then click Autofill";
+    } else if (!autofillPage) {
+      title =
+        "Open a supported application form (Greenhouse, Lever, Ashby, Workday, and similar), then click Autofill";
+    } else if (linkedInJobsPage) {
+      title =
+        "Heuristic autofill on LinkedIn jobs — Easy Apply modal support is best-effort, not dedicated";
     }
 
     return (
@@ -589,7 +591,7 @@ export function Popup(): React.ReactElement {
         title={title}
         onClick={() => void handleAutofillBeta()}
       >
-        {linkedInPage ? "Autofill (coming soon)" : "Autofill (beta)"}
+        Autofill (beta)
       </button>
     );
   }

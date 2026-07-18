@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { isGreenhouseHost, isLinkedInHost } from "../../src/autofillFlags.js";
+import {
+  isAutofillHost,
+  isGreenhouseHost,
+  isLinkedInHost,
+} from "../../src/autofillFlags.js";
 
 describe("autofillFlags", () => {
   it("detects Greenhouse hosts", () => {
@@ -10,5 +14,25 @@ describe("autofillFlags", () => {
   it("detects LinkedIn hosts", () => {
     expect(isLinkedInHost("https://www.linkedin.com/jobs/view/123")).toBe(true);
     expect(isLinkedInHost("https://boards.greenhouse.io/acme/jobs/123")).toBe(false);
+  });
+
+  it("isAutofillHost covers autofill-runner hosts", () => {
+    expect(isAutofillHost("https://boards.greenhouse.io/acme/jobs/123")).toBe(true);
+    expect(isAutofillHost("https://jobs.lever.co/acme/abc")).toBe(true);
+    expect(isAutofillHost("https://jobs.ashbyhq.com/acme/abc")).toBe(true);
+    expect(isAutofillHost("https://acme.myworkdayjobs.com/en-US/careers")).toBe(true);
+    expect(isAutofillHost("https://careers-acme.icims.com/jobs/123")).toBe(true);
+    expect(isAutofillHost("https://acme.ukg.net/careers")).toBe(true);
+    expect(isAutofillHost("https://jobright.ai/jobs/123")).toBe(true);
+    expect(isAutofillHost("https://www.jobright.ai/jobs/123")).toBe(true);
+    expect(isAutofillHost("https://www.linkedin.com/jobs/view/123")).toBe(true);
+    expect(isAutofillHost("https://linkedin.com/jobs/collections/recommended")).toBe(true);
+  });
+
+  it("isAutofillHost rejects unsupported hosts and non-jobs LinkedIn", () => {
+    expect(isAutofillHost("https://example.com/apply")).toBe(false);
+    expect(isAutofillHost("https://www.linkedin.com/feed/")).toBe(false);
+    expect(isAutofillHost("https://www.linkedin.com/in/someone")).toBe(false);
+    expect(isAutofillHost(undefined)).toBe(false);
   });
 });
