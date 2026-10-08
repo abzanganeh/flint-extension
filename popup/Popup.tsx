@@ -14,6 +14,7 @@ import {
   getGithubClientId,
   getGoogleClientId,
   getMicrosoftClientId,
+  getPrivacyPolicyUrl,
 } from "../src/urls.js";
 import { PRODUCT_NAME, FLINT_DESKTOP_NAME, FLINT_DESKTOP_HANDOFF_ENABLED } from "../src/brand.js";
 import { PopupHeader } from "./BrandWordmark.js";
@@ -24,6 +25,7 @@ import {
   sanitizeMyGreenhouseExtractedFields,
 } from "../src/myGreenhouseExtract.js";
 import { extensionInvalidatedMessage, isExtensionContextValid } from "../src/extensionContext.js";
+import { isAllowedExtensionFetchUrl } from "../src/extensionHostAllowlist.js";
 import { getExtensionVersion } from "../src/extensionVersion.js";
 import { resolveHostTab } from "../src/resolveHostTab.js";
 import { FLINT_JD_REFRESH_EVENT } from "../src/panelMessages.js";
@@ -40,6 +42,7 @@ import {
 } from "../src/jdParse.js";
 import { buildFlintImportDeepLink, dispatchFlintDeepLinkFromPopup, FLINT_DOWNLOAD_URL, openFlintDeepLinkFromPopup } from "../src/flintDeepLink.js";
 import { isAutofillEnabled, isAutofillHost, isLinkedInHost } from "../src/autofillFlags.js";
+import { recordExtensionOpenBeacon } from "../src/productBeacon.js";
 
 const GOOGLE_ENABLED = Boolean(getGoogleClientId());
 const GITHUB_ENABLED = Boolean(getGithubClientId());
@@ -102,6 +105,7 @@ const MY_GREENHOUSE_POPUP_TIMEOUT_MS = 16_000;
 async function _parseJdFromUrlDirect(
   url: string,
 ): Promise<{ title: string; company: string; text: string } | null> {
+  if (!isAllowedExtensionFetchUrl(url)) return null;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
@@ -281,6 +285,7 @@ export function Popup(): React.ReactElement {
   const manualEntryReturnRef = useRef<View>("not_on_job");
 
   useEffect(() => {
+    recordExtensionOpenBeacon();
     void _init();
     return () => {
       if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
@@ -873,6 +878,13 @@ export function Popup(): React.ReactElement {
             Log in
           </button>
         </form>
+        <p className="hint hint-compact login-legal">
+          Sign-in sends your credentials or OAuth tokens only to Flint Apply (
+          <a href={getPrivacyPolicyUrl()} target="_blank" rel="noreferrer">
+            Privacy Policy
+          </a>
+          ).
+        </p>
       </div>
     );
   }
